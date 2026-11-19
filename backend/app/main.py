@@ -61,6 +61,22 @@ def require_role(role: str):
         return user
     return dependency
 
+
+@app.on_event("startup")
+def bootstrap_admin_from_environment():
+    email = os.getenv("LUSHORA_ADMIN_EMAIL", "").strip().lower()
+    password = os.getenv("LUSHORA_ADMIN_PASSWORD", "")
+    if not email or not password or len(password) < 12:
+        return
+    db = next(get_db())
+    try:
+        existing = db.query(models.User).filter(models.User.email == email).first()
+        if existing is None:
+            db.add(models.User(full_name=os.getenv("LUSHORA_ADMIN_NAME", "LUSHORA Admin"), email=email, password_hash=_password_hash(password), role="admin", is_active=True))
+            db.commit()
+    finally:
+        db.close()
+
 CATEGORIES = ["Makeup", "Salon", "Skin Clinic", "Nail Studio"]
 
 
