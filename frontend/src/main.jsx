@@ -28,7 +28,7 @@ function App() {
   const [showAll, setShowAll] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', date: '' });
   const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(false);\n  const [authMode, setAuthMode] = useState('login');\n  const [authForm, setAuthForm] = useState({ full_name: '', email: '', phone: '', password: '', role: 'customer' });\n  const [authOpen, setAuthOpen] = useState(false);\n  const [businessOpen, setBusinessOpen] = useState(false);\n  const [businessForm, setBusinessForm] = useState({ name: '', category: 'Salon', city: 'Coimbatore', locality: '', description: '' });\n  const [account, setAccount] = useState(() => { try { return JSON.parse(localStorage.getItem('lushora-account') || 'null'); } catch { return null; } });
+  const [loading, setLoading] = useState(false);\n  const [authMode, setAuthMode] = useState('login');\n  const [authForm, setAuthForm] = useState({ full_name: '', email: '', phone: '', password: '', role: 'customer' });\n  const [authOpen, setAuthOpen] = useState(false);\n  const [businessOpen, setBusinessOpen] = useState(false);\n  const [dashboardOpen, setDashboardOpen] = useState(false);\n  const [dashboardData, setDashboardData] = useState(null);\n  const [businessForm, setBusinessForm] = useState({ name: '', category: 'Salon', city: 'Coimbatore', locality: '', description: '' });\n  const [account, setAccount] = useState(() => { try { return JSON.parse(localStorage.getItem('lushora-account') || 'null'); } catch { return null; } });
 
   async function load() {
     setLoading(true);
@@ -74,6 +74,46 @@ function App() {
   }
 
 
+
+  async function openDashboard() {
+    setDashboardOpen(true);
+    setDashboardData({ loading: true });
+    const token = account?.access_token;
+    if (!token) return;
+    const headers = { Authorization: 'Bearer ' + token };
+    try {
+      const role = account.user.role;
+      if (role === 'customer') {
+        const r = await fetch(API + '/customer/me/bookings', { headers });
+        if (!r.ok) throw new Error('Unable to load customer bookings');
+        setDashboardData({ bookings: await r.json() });
+      } else if (role === 'provider') {
+        const [p, b] = await Promise.all([fetch(API + '/provider/me', { headers }), fetch(API + '/provider/me/bookings', { headers })]);
+        const provider = p.ok ? await p.json() : null;
+        const bookings = b.ok ? await b.json() : [];
+        setDashboardData({ provider, bookings });
+      } else if (role === 'admin') {
+        const [s, p, b] = await Promise.all([fetch(API + '/admin/summary', { headers }), fetch(API + '/admin/providers', { headers }), fetch(API + '/admin/bookings', { headers })]);
+        setDashboardData({ summary: s.ok ? await s.json() : null, providers: p.ok ? await p.json() : [], bookings: b.ok ? await b.json() : [] });
+      }
+    } catch (err) { setDashboardData({ error: err.message }); }
+  }
+  async function updateBookingStatus(id, status) {
+    try {
+      const r = await fetch(API + '/bookings/' + id + '/status?status=' + status, { method:'PATCH', headers:{ Authorization:'Bearer '+account.access_token } });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'Update failed');
+      await openDashboard();
+    } catch (err) { setNotice(err.message); }
+  }
+  async function approveProvider(id, status) {
+    try {
+      const r = await fetch(API + '/admin/providers/' + id + '/approval?status=' + status, { method:'PATCH', headers:{ Authorization:'Bearer '+account.access_token } });
+      if (!r.ok) { const d=await r.json(); throw new Error(d.detail || 'Approval failed'); }
+      await openDashboard();
+    } catch (err) { setNotice(err.message); }
+  }
+
   async function submitAuth(e) {
     e.preventDefault();
     try {
@@ -104,7 +144,7 @@ function App() {
     <header className="site-header">
       <a className="wordmark" href="#top" aria-label="LUSHORA home"><span className="mark">✿</span><span>LUSHORA</span><small>BEAUTY · WELLNESS · SKIN</small></a>
       <nav className="main-nav"><a href="#discover">Discover</a><a href="#journal">The Journal</a><a href="#business">For businesses</a></nav>
-      <div className="header-actions"><button className="text-button" onClick={() => document.getElementById('business')?.scrollIntoView({ behavior: 'smooth' })}>List your business</button><button className="login-button" onClick={() => account ? (localStorage.removeItem('lushora-account'), setAccount(null), setNotice('You have signed out.')) : setAuthOpen(true)}>{account ? 'Sign out' : 'Log in'} <span>↗</span></button></div>
+      <div className="header-actions"><button className="text-button" onClick={() => document.getElementById('business')?.scrollIntoView({ behavior: 'smooth' })}>List your business</button>{account && <button className="text-button" onClick={openDashboard}>Dashboard</button>}<button className="login-button" onClick={() => account ? (localStorage.removeItem('lushora-account'), setAccount(null), setNotice('You have signed out.')) : setAuthOpen(true)}>{account ? 'Sign out' : 'Log in'} <span>↗</span></button></div>
     </header>
 
     <main id="top">
@@ -157,7 +197,9 @@ function App() {
     <footer className="site-footer"><div className="footer-top"><a className="wordmark footer-wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span></a><p>Discover beauty. Find your people. Make time for you.</p><div className="footer-links"><a href="#discover">Discover</a><a href="#journal">Journal</a><a href="#business">For businesses</a></div></div><div className="footer-bottom"><span>© 2026 LUSHORA. All rights reserved.</span><span>BEAUTY · WELLNESS · SKIN CARE</span></div></footer>
 
     
-    {authOpen && <div className="modal-backdrop" onClick={() => setAuthOpen(false)}><form className="booking-modal account-modal" onSubmit={submitAuth} onClick={e=>e.stopPropagation()}><button type="button" className="modal-close" onClick={()=>setAuthOpen(false)}>×</button><p className="eyebrow">LUSHORA ACCOUNT</p><h2>{authMode === 'register' ? 'Create your account' : 'Welcome back'}</h2><div className="auth-switch"><button type="button" onClick={()=>setAuthMode('login')} className={authMode==='login'?'active':''}>Log in</button><button type="button" onClick={()=>setAuthMode('register')} className={authMode==='register'?'active':''}>Register</button></div>{authMode==='register' && <><label>Full name<input required minLength="2" value={authForm.full_name} onChange={e=>setAuthForm({...authForm,full_name:e.target.value})}/></label><label>Mobile number<input value={authForm.phone} onChange={e=>setAuthForm({...authForm,phone:e.target.value})} placeholder="Optional"/></label><label>Account type<select value={authForm.role} onChange={e=>setAuthForm({...authForm,role:e.target.value})}><option value="customer">Customer</option><option value="provider">Beauty business</option></select></label></>}<label>Email<input type="email" required value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})}/></label><label>Password<input type="password" required minLength="8" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/></label><button className="dark-button full-button">{authMode==='register'?'Create account':'Log in'} <span>→</span></button></form></div>}
+    
+    {dashboardOpen && <div className="modal-backdrop" onClick={()=>setDashboardOpen(false)}><div className="booking-modal dashboard-modal" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setDashboardOpen(false)}>×</button><p className="eyebrow">LUSHORA {account?.user?.role?.toUpperCase()} DASHBOARD</p><h2>{account?.user?.role==='admin'?'Platform overview':account?.user?.role==='provider'?'Business dashboard':'My bookings'}</h2>{dashboardData?.loading && <p>Loading dashboard…</p>}{dashboardData?.error && <p>{dashboardData.error}</p>}{dashboardData?.summary && <div className="dashboard-stats">{Object.entries(dashboardData.summary).map(([k,v])=><div key={k}><strong>{v}</strong><span>{k.replaceAll('_',' ')}</span></div>)}</div>}{dashboardData?.providers && account?.user?.role==='admin' && <><h3>Business approvals</h3>{dashboardData.providers.map(p=><div className="dashboard-row" key={p.id}><div><strong>{p.name}</strong><small>{p.city} · {p.category} · {p.approval_status}</small></div>{p.approval_status==='pending' && <div><button onClick={()=>approveProvider(p.id,'approved')}>Approve</button><button onClick={()=>approveProvider(p.id,'rejected')}>Reject</button></div>}</div>)}</>}{dashboardData?.provider && <div className="dashboard-provider"><h3>{dashboardData.provider.name}</h3><p>Status: {dashboardData.provider.approval_status}</p><p>{dashboardData.provider.services?.length || 0} services listed</p></div>}{dashboardData?.bookings && <><h3>Bookings</h3>{dashboardData.bookings.length===0 && <p>No bookings yet.</p>}{dashboardData.bookings.map(b=><div className="dashboard-row" key={b.id}><div><strong>Booking #{b.id} · {b.status}</strong><small>{new Date(b.appointment_at).toLocaleString()} · Service #{b.service_id}</small></div>{(account?.user?.role==='provider' || account?.user?.role==='admin') && b.status==='requested' && <div><button onClick={()=>updateBookingStatus(b.id,'confirmed')}>Confirm</button><button onClick={()=>updateBookingStatus(b.id,'rejected')}>Reject</button></div>}{account?.user?.role==='customer' && ['requested','confirmed'].includes(b.status) && <button onClick={()=>updateBookingStatus(b.id,'cancelled')}>Cancel</button>}</div>)}</>}</div></div>}
+\n    {authOpen && <div className="modal-backdrop" onClick={() => setAuthOpen(false)}><form className="booking-modal account-modal" onSubmit={submitAuth} onClick={e=>e.stopPropagation()}><button type="button" className="modal-close" onClick={()=>setAuthOpen(false)}>×</button><p className="eyebrow">LUSHORA ACCOUNT</p><h2>{authMode === 'register' ? 'Create your account' : 'Welcome back'}</h2><div className="auth-switch"><button type="button" onClick={()=>setAuthMode('login')} className={authMode==='login'?'active':''}>Log in</button><button type="button" onClick={()=>setAuthMode('register')} className={authMode==='register'?'active':''}>Register</button></div>{authMode==='register' && <><label>Full name<input required minLength="2" value={authForm.full_name} onChange={e=>setAuthForm({...authForm,full_name:e.target.value})}/></label><label>Mobile number<input value={authForm.phone} onChange={e=>setAuthForm({...authForm,phone:e.target.value})} placeholder="Optional"/></label><label>Account type<select value={authForm.role} onChange={e=>setAuthForm({...authForm,role:e.target.value})}><option value="customer">Customer</option><option value="provider">Beauty business</option></select></label></>}<label>Email<input type="email" required value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})}/></label><label>Password<input type="password" required minLength="8" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/></label><button className="dark-button full-button">{authMode==='register'?'Create account':'Log in'} <span>→</span></button></form></div>}
     {businessOpen && <div className="modal-backdrop" onClick={()=>setBusinessOpen(false)}><form className="booking-modal" onSubmit={submitBusiness} onClick={e=>e.stopPropagation()}><button type="button" className="modal-close" onClick={()=>setBusinessOpen(false)}>×</button><p className="eyebrow">JOIN THE LUSHORA EDIT</p><h2>List your business</h2><label>Business name<input required value={businessForm.name} onChange={e=>setBusinessForm({...businessForm,name:e.target.value})}/></label><label>Category<select value={businessForm.category} onChange={e=>setBusinessForm({...businessForm,category:e.target.value})}>{['Makeup','Salon','Skin Clinic','Nail Studio'].map(c=><option key={c}>{c}</option>)}</select></label><label>City<select value={businessForm.city} onChange={e=>setBusinessForm({...businessForm,city:e.target.value})}>{cityOptions.slice(1).map(c=><option key={c}>{c}</option>)}</select></label><label>Locality<input value={businessForm.locality} onChange={e=>setBusinessForm({...businessForm,locality:e.target.value})}/></label><label>About your business<textarea value={businessForm.description} onChange={e=>setBusinessForm({...businessForm,description:e.target.value})}/></label><button className="dark-button full-button">Submit for review <span>→</span></button><small className="booking-note">Business listings are reviewed before they appear publicly.</small></form></div>}
 \n    {selected && <div className="modal-backdrop" onClick={() => setSelected(null)}><form className="booking-modal" onSubmit={book} onClick={e => e.stopPropagation()}><button type="button" className="modal-close" onClick={() => setSelected(null)}>×</button><p className="eyebrow">YOUR LUSHORA MOMENT</p><h2>{selected.service.name}</h2><p className="modal-provider">{selected.provider.name} · {selected.provider.locality}, {selected.provider.city}</p><div className="modal-price">₹{selected.service.price_inr}<span> · {selected.service.duration_minutes} minutes</span></div><label>Your name<input required minLength="2" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></label><label>Mobile number<input required minLength="10" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="10-digit mobile number"/></label><label>Preferred appointment<input required type="datetime-local" min={new Date(Date.now() + 60000).toISOString().slice(0, 16)} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}/></label><button className="dark-button full-button">Send booking request <span>→</span></button><small className="booking-note">This preview creates a booking request. Live availability, payment and instant confirmation are not enabled yet.</small></form></div>}
   </>;
