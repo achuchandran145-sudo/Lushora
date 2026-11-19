@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
@@ -45,8 +45,29 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
     if not provider or not service: raise HTTPException(404, "Provider or service not found")
     if payload.appointment_at <= datetime.now(): raise HTTPException(400, "Appointment must be in the future")
+
+    # Prevent overlapping requests for the same provider. Requested bookings block the
+    # slot until the provider accepts, rejects, or cancels them.
+    new_end = payload.appointment_at + timedelta(minutes=service.duration_minutes)
+    active = db.query(models.Booking, models.Service).join(
+        models.Service, models.Booking.service_id == models.Service.id
+    ).filter(
+        models.Booking.provider_id == payload.provider_id,
+        models.Booking.status.in_(["requested", "confirmed"]),
+    ).all()
+    for existing_booking, existing_service in active:
+        existing_end = existing_booking.appointment_at + timedelta(minutes=existing_service.duration_minutes)
+        if payload.appointment_at < existing_end and new_end > existing_booking.appointment_at:
+            raise HTTPException(409, "This provider already has a booking during the selected time")
+
     booking = models.Booking(**payload.model_dump())
-    db.add(booking); db.commit(); db.refresh(booking)
+    db.add(booking)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(booking)
     return booking
 
 @app.get("/api/bookings", response_model=list[schemas.BookingOut])
