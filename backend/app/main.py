@@ -117,7 +117,7 @@ def list_providers(category: str | None = None, city: str | None = None, localit
 
 @app.get("/api/providers/{provider_id}", response_model=schemas.ProviderOut)
 def get_provider(provider_id: int, db: Session = Depends(get_db)):
-    provider = db.query(models.Provider).options(joinedload(models.Provider.services)).filter(models.Provider.id == provider_id).first()
+    provider = db.query(models.Provider).options(joinedload(models.Provider.services)).filter(models.Provider.id == provider_id, models.Provider.approval_status == "approved").first()
     if not provider: raise HTTPException(404, "Provider not found")
     return provider
 
@@ -189,6 +189,37 @@ def provider_me(user: models.User = Depends(require_role("provider")), db: Sessi
 @app.get("/api/bookings", response_model=list[schemas.BookingOut])
 def list_bookings(db: Session = Depends(get_db), user: models.User = Depends(require_role("admin"))):
     return db.query(models.Booking).order_by(models.Booking.created_at.desc()).all()
+
+
+@app.get("/api/admin/providers")
+def admin_providers(user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    return db.query(models.Provider).order_by(models.Provider.approval_status.asc(), models.Provider.name.asc()).all()
+
+@app.patch("/api/admin/providers/{provider_id}/approval")
+def provider_approval(provider_id: int, status: str = Query(...), user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    if status not in {"approved", "rejected"}: raise HTTPException(400, "Status must be approved or rejected")
+    provider = db.query(models.Provider).filter(models.Provider.id == provider_id).first()
+    if not provider: raise HTTPException(404, "Provider not found")
+    provider.approval_status = status
+    provider.verified = status == "approved"
+    db.commit()
+    return {"id": provider.id, "approval_status": provider.approval_status}
+
+@app.post("/api/provider/me/services", status_code=201)
+def provider_add_service(name: str = Query(..., min_length=2, max_length=120), price_inr: int = Query(..., ge=0), duration_minutes: int = Query(..., ge=5, le=600), user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id, models.Provider.approval_status == "approved").first()
+    if not provider: raise HTTPException(403, "Business is not approved")
+    service = models.Service(provider_id=provider.id, name=name, price_inr=price_inr, duration_minutes=duration_minutes)
+    db.add(service); db.commit(); db.refresh(service)
+    return service
+
+@app.delete("/api/provider/me/services/{service_id}")
+def provider_delete_service(service_id: int, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
+    service = db.query(models.Service).filter(models.Service.id == service_id, models.Service.provider_id == (provider.id if provider else -1)).first()
+    if not service: raise HTTPException(404, "Service not found")
+    db.delete(service); db.commit()
+    return {"message": "Service deleted"}
 
 @app.get("/api/admin/summary")
 def admin_summary(db: Session = Depends(get_db), user: models.User = Depends(require_role("admin"))):
