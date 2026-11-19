@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-import os, re, json, hmac, hashlib, base64
+import os, re, json, hmac, hashlib, base64, secrets
 from fastapi import FastAPI, Depends, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
@@ -79,6 +79,63 @@ def bootstrap_admin_from_environment():
         db.close()
 
 CATEGORIES = ["Makeup", "Salon", "Skin Clinic", "Nail Studio"]
+
+# Customer phone OTP authentication (development OTP only until SMS gateway is configured)
+OTP_DEV_MODE = os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true"
+OTP_TTL_MINUTES = 5
+
+def _normalize_phone(phone: str) -> str:
+    digits = re.sub(r"\\D", "", phone or "")
+    if digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    if len(digits) != 10:
+        raise HTTPException(400, "Enter a valid 10-digit Indian mobile number")
+    return "+91" + digits
+
+
+def _otp_digest(phone: str, otp: str) -> str:
+    return hashlib.sha256((phone + ":" + otp + ":" + os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret")).encode()).hexdigest()
+
+
+@app.post("/api/v2/customer/otp/request")
+def customer_otp_request(payload: dict, db: Session = Depends(get_db)):
+    phone = _normalize_phone(str(payload.get("phone", "")))
+    if not OTP_DEV_MODE:
+        raise HTTPException(503, "SMS OTP delivery is not configured yet. Configure an SMS provider before enabling production customer login.")
+    recent = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.created_at > datetime.utcnow() - timedelta(seconds=60)).first()
+    if recent:
+        raise HTTPException(429, "Please wait 60 seconds before requesting another OTP")
+    code = f"{secrets.randbelow(1000000):06d}"
+    db.add(models.OTPChallenge(phone=phone, code_hash=_otp_digest(phone, code), expires_at=datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)))
+    db.commit()
+    return {"message": "Development OTP generated. SMS delivery is not connected yet.", "development_otp": code if OTP_DEV_MODE else None, "expires_in_seconds": OTP_TTL_MINUTES * 60}
+
+
+@app.post("/api/v2/customer/otp/verify")
+def customer_otp_verify(payload: dict, db: Session = Depends(get_db)):
+    phone = _normalize_phone(str(payload.get("phone", "")))
+    otp = str(payload.get("otp", "")).strip()
+    if not re.fullmatch(r"\\d{6}", otp):
+        raise HTTPException(400, "Enter the 6-digit OTP")
+    challenge = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.consumed == False).order_by(models.OTPChallenge.created_at.desc()).first()
+    if not challenge or challenge.expires_at < datetime.utcnow():
+        raise HTTPException(401, "OTP expired. Request a new code.")
+    if challenge.attempts >= 5:
+        challenge.consumed = True; db.commit()
+        raise HTTPException(429, "Too many attempts. Request a new OTP.")
+    challenge.attempts += 1
+    if not hmac.compare_digest(challenge.code_hash, _otp_digest(phone, otp)):
+        db.commit()
+        raise HTTPException(401, "Incorrect OTP")
+    challenge.consumed = True
+    user = db.query(models.User).filter(models.User.phone == phone, models.User.role == "customer").first()
+    if not user:
+        placeholder_email = phone.replace("+", "") + "@customer.lushora.local"
+        user = models.User(full_name="LUSHORA Customer", email=placeholder_email, phone=phone, password_hash=_password_hash(secrets.token_urlsafe(32)), role="customer", is_active=True)
+        db.add(user); db.flush()
+    db.commit(); db.refresh(user)
+    return {"access_token": _make_token(user.id), "token_type": "bearer", "user": user}
+
 
 
 @app.post("/api/auth/register", response_model=schemas.TokenOut, status_code=201)
