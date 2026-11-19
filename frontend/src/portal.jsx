@@ -32,7 +32,7 @@ function LoginPortal({ kind }) {
     try {
       const r=await fetch(API+'/v2/customer/otp/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,otp})});
       const d=await r.json();if(!r.ok)throw new Error(d.detail||'OTP verification failed');
-      localStorage.setItem('lushora-customer',JSON.stringify(d));setNotice('Verified successfully. Welcome to LUSHORA.');
+      localStorage.setItem('lushora-customer',JSON.stringify(d));localStorage.setItem('lushora-account',JSON.stringify(d));setNotice('Verified successfully. Welcome to LUSHORA.');
       window.location.href='/';
     }catch(e){setNotice(e.message)}finally{setBusy(false)}
   }
