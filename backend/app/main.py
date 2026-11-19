@@ -190,6 +190,15 @@ def update_booking_status(booking_id: int, status: str = Query(...), user: model
     db.commit()
     return {"id": booking.id, "status": booking.status}
 
+
+@app.get("/api/customer/me/bookings")
+def customer_bookings(user: models.User = Depends(require_role("customer")), db: Session = Depends(get_db)):
+    return db.query(models.Booking).filter(models.Booking.customer_user_id == user.id).order_by(models.Booking.appointment_at.desc()).all()
+
+@app.get("/api/admin/bookings")
+def admin_bookings(user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    return db.query(models.Booking).order_by(models.Booking.appointment_at.desc()).all()
+
 @app.get("/api/provider/me/bookings")
 def provider_bookings(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
