@@ -2,14 +2,22 @@ $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Write-Host '=== LUSHORA setup ===' -ForegroundColor Magenta
 function Find-Python {
-  foreach ($cmd in @('py','python')) {
+  # Prefer versions with stable wheel support for the pinned backend dependencies.
+  foreach ($version in @('3.13','3.12')) {
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+      try { & py "-$version" --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { return "py -$version" } } catch {}
+    }
+  }
+  foreach ($cmd in @('python','python3')) {
     if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-      try { & $cmd --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { return $cmd } } catch {}
+      try {
+        $versionText = & $cmd --version 2>$null
+        if ($versionText -match 'Python 3\.(12|13)\.') { return $cmd }
+      } catch {}
     }
   }
   return $null
-}
-$Python = Find-Python
+}$Python = Find-Python
 if (-not $Python) {
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Host 'Python not found. Installing Python 3.12 with winget...' -ForegroundColor Yellow
@@ -17,7 +25,7 @@ if (-not $Python) {
     $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
     $Python = Find-Python
   }
-  if (-not $Python) { throw 'Python 3.12+ is required. Install from https://www.python.org/downloads/ and rerun.' }
+  if (-not $Python) { throw 'Python 3.12 or 3.13 is recommended for this MVP. Install from https://www.python.org/downloads/ and rerun.' }
 }
 $Node = Get-Command node -ErrorAction SilentlyContinue
 $Npm = Get-Command npm -ErrorAction SilentlyContinue
