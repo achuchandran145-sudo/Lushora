@@ -61,3 +61,25 @@ def test_overlapping_booking_rejected_but_non_overlapping_allowed():
     non_overlap['customer_name'] = 'Third Customer'
     non_overlap['appointment_at'] = (start + timedelta(minutes=service['duration_minutes'] + 5)).isoformat()
     assert client.post('/api/bookings', json=non_overlap).status_code == 201
+
+
+def test_customer_register_login_and_me():
+    registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123','role':'customer'})
+    assert registration.status_code == 201
+    token = registration.json()['access_token']
+    profile = client.get('/api/auth/me', headers={'Authorization':f'Bearer {token}'})
+    assert profile.status_code == 200
+    assert profile.json()['role'] == 'customer'
+    login = client.post('/api/auth/login', json={'email':'test-user@example.com','password':'StrongPass123'})
+    assert login.status_code == 200
+    assert client.post('/api/auth/login', json={'email':'test-user@example.com','password':'wrongpass'}).status_code == 401
+
+
+def test_provider_registration_is_pending():
+    registration = client.post('/api/auth/register', json={'full_name':'Provider User','email':'provider-user@example.com','phone':'9876543211','password':'StrongPass123','role':'provider'})
+    assert registration.status_code == 201
+    token = registration.json()['access_token']
+    submission = client.post('/api/provider/register', headers={'Authorization':f'Bearer {token}'}, json={'name':'New Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':'Test business'})
+    assert submission.status_code == 201
+    assert submission.json()['approval_status'] == 'pending'
+    assert len(client.get('/api/providers').json()) == 0
