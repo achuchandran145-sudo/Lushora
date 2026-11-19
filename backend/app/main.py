@@ -122,7 +122,7 @@ def get_provider(provider_id: int, db: Session = Depends(get_db)):
     return provider
 
 @app.post("/api/bookings", response_model=schemas.BookingOut, status_code=201)
-def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)):
+def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
     provider = db.query(models.Provider).filter(models.Provider.id == payload.provider_id).first()
     service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
     if not provider or not service: raise HTTPException(404, "Provider or service not found")
@@ -142,7 +142,7 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
         if payload.appointment_at < existing_end and new_end > existing_booking.appointment_at:
             raise HTTPException(409, "This provider already has a booking during the selected time")
 
-    booking = models.Booking(**payload.model_dump())
+    attached_user = None\n    if authorization and authorization.lower().startswith("bearer "):\n        attached_user = _get_user_from_token(authorization[7:].strip(), db)\n        if not attached_user: raise HTTPException(401, "Invalid or expired token")\n        if attached_user.role != "customer": raise HTTPException(403, "Only customer accounts can book")\n    booking = models.Booking(**payload.model_dump(), customer_user_id=attached_user.id if attached_user else None)
     db.add(booking)
     try:
         db.commit()
