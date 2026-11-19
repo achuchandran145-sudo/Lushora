@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
-const API = 'http://127.0.0.1:8000/api';
+const API = import.meta.env.VITE_LUSHORA_API || 'http://127.0.0.1:8000/api';
 const categories = [
   { name: 'All experiences', icon: '✧', key: 'All' },
   { name: 'Makeup', icon: '◈', key: 'Makeup' },
@@ -28,7 +28,7 @@ function App() {
   const [showAll, setShowAll] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', date: '' });
   const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);\n  const [authMode, setAuthMode] = useState('login');\n  const [authForm, setAuthForm] = useState({ full_name: '', email: '', phone: '', password: '', role: 'customer' });\n  const [authOpen, setAuthOpen] = useState(false);\n  const [businessOpen, setBusinessOpen] = useState(false);\n  const [businessForm, setBusinessForm] = useState({ name: '', category: 'Salon', city: 'Coimbatore', locality: '', description: '' });\n  const [account, setAccount] = useState(() => { try { return JSON.parse(localStorage.getItem('lushora-account') || 'null'); } catch { return null; } });
 
   async function load() {
     setLoading(true);
@@ -65,11 +65,37 @@ function App() {
     e.preventDefault();
     if (!selected) return;
     try {
-      const r = await fetch(`${API}/bookings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customer_name: form.name, customer_phone: form.phone, provider_id: selected.provider.id, service_id: selected.service.id, appointment_at: new Date(form.date).toISOString() }) });
+      const r = await fetch(`${API}/bookings`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(account?.access_token ? { Authorization: 'Bearer ' + account.access_token } : {}) }, body: JSON.stringify({ customer_name: form.name, customer_phone: form.phone, provider_id: selected.provider.id, service_id: selected.service.id, appointment_at: new Date(form.date).toISOString() }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Booking request failed');
       setNotice(`Your booking request has been received. Reference #${d.id}.`);
       setSelected(null); setForm({ name: '', phone: '', date: '' }); load();
+    } catch (err) { setNotice(err.message); }
+  }
+
+
+  async function submitAuth(e) {
+    e.preventDefault();
+    try {
+      const endpoint = authMode === 'register' ? '/auth/register' : '/auth/login';
+      const payload = authMode === 'register' ? authForm : { email: authForm.email, password: authForm.password };
+      const r = await fetch(API + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Authentication failed');
+      setAccount(data); localStorage.setItem('lushora-account', JSON.stringify(data));
+      setAuthOpen(false); setNotice('Welcome to LUSHORA. You are signed in.');
+    } catch (err) { setNotice(err.message); }
+  }
+
+  async function submitBusiness(e) {
+    e.preventDefault();
+    try {
+      const token = account?.access_token;
+      if (!token) { setBusinessOpen(false); setAuthMode('register'); setAuthForm({...authForm, role:'provider'}); setAuthOpen(true); setNotice('Create a provider account first, then submit your business.'); return; }
+      const r = await fetch(API + '/provider/register', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+token }, body:JSON.stringify(businessForm) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Business submission failed');
+      setBusinessOpen(false); setNotice(data.message || 'Business submitted for approval.');
     } catch (err) { setNotice(err.message); }
   }
 
@@ -78,7 +104,7 @@ function App() {
     <header className="site-header">
       <a className="wordmark" href="#top" aria-label="LUSHORA home"><span className="mark">✿</span><span>LUSHORA</span><small>BEAUTY · WELLNESS · SKIN</small></a>
       <nav className="main-nav"><a href="#discover">Discover</a><a href="#journal">The Journal</a><a href="#business">For businesses</a></nav>
-      <div className="header-actions"><button className="text-button" onClick={() => document.getElementById('business')?.scrollIntoView({ behavior: 'smooth' })}>List your business</button><button className="login-button" onClick={() => setNotice('Customer sign-in is planned for the next development milestone.')}>Log in <span>↗</span></button></div>
+      <div className="header-actions"><button className="text-button" onClick={() => document.getElementById('business')?.scrollIntoView({ behavior: 'smooth' })}>List your business</button><button className="login-button" onClick={() => account ? (localStorage.removeItem('lushora-account'), setAccount(null), setNotice('You have signed out.')) : setAuthOpen(true)}>{account ? 'Sign out' : 'Log in'} <span>↗</span></button></div>
     </header>
 
     <main id="top">
@@ -113,7 +139,7 @@ function App() {
         {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice('')}>×</button></div>}
         <div className="result-line"><span>{loading ? 'Finding experiences…' : `${filtered.length} ${filtered.length === 1 ? 'place' : 'places'} to explore`}</span><span className="result-location">{city === 'All cities' ? 'Across our launch cities' : city}</span></div>
         {visible.length ? <div className="provider-grid">{visible.map((p, i) => <article className="provider-card" key={p.id}>
-          <div className={`provider-image image-${i % 4}`}><span className="provider-category">{p.category}</span><button className="heart" aria-label="Save provider" onClick={() => setNotice('Favourites will be available when customer accounts are introduced.')}>♡</button><div className="image-initials">{p.name.split(' ').slice(0, 2).map(x => x[0]).join('')}</div></div>
+          <div className={`provider-image image-${i % 4}`}><span className="provider-category">{p.category}</span><button className="heart" aria-label="Save provider" onClick={() => account ? setNotice('Favourites are not implemented yet.') : setAuthOpen(true)}>♡</button><div className="image-initials">{p.name.split(' ').slice(0, 2).map(x => x[0]).join('')}</div></div>
           <div className="provider-info"><div className="provider-meta"><span>{p.locality}, {p.city}</span>{p.verified && <span className="verified-tag">✦ VERIFIED</span>}</div><h3>{p.name}</h3><div className="rating">★ <b>{Number(p.rating || 0).toFixed(1)}</b><span> · LUSHORA listed specialist</span></div><p className="provider-description">{p.description}</p>
             <div className="service-list">{(p.services || []).slice(0, 2).map(s => <div className="service-row" key={s.id}><div><b>{s.name}</b><small>{s.duration_minutes} min</small></div><div className="service-price">₹{s.price_inr}<button onClick={() => setSelected({ provider: p, service: s })}>Book</button></div></div>)}</div>
           </div>
@@ -125,12 +151,15 @@ function App() {
 
       <section className="journal-section" id="journal"><div className="section-title"><div><p className="eyebrow">NOTES ON BEAUTY & WELLNESS</p><h2>A little inspiration, thoughtfully chosen.</h2></div><span className="journal-side">THE LUSHORA JOURNAL · 001</span></div><div className="journal-grid">{editorial.map(item => <article className="journal-card" key={item.title}><img src={item.image} alt="Beauty editorial"/><div><span className="eyebrow">{item.kicker}</span><h3>{item.title}</h3><span className="read-link">Explore the story ↗</span></div></article>)}</div></section>
 
-      <section className="business-banner" id="business"><div><p className="eyebrow light">FOR THE PEOPLE BEHIND THE BEAUTY</p><h2>Your craft deserves<br/><em>to be discovered.</em></h2><p>Bring your business to a community looking for their next favourite beauty experience.</p></div><button className="light-button" onClick={() => setNotice('Provider registration is part of the upcoming provider onboarding release.')}>List your business <span>↗</span></button></section>
+      <section className="business-banner" id="business"><div><p className="eyebrow light">FOR THE PEOPLE BEHIND THE BEAUTY</p><h2>Your craft deserves<br/><em>to be discovered.</em></h2><p>Bring your business to a community looking for their next favourite beauty experience.</p></div><button className="light-button" onClick={() => setBusinessOpen(true)}>List your business <span>↗</span></button></section>
     </main>
 
     <footer className="site-footer"><div className="footer-top"><a className="wordmark footer-wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span></a><p>Discover beauty. Find your people. Make time for you.</p><div className="footer-links"><a href="#discover">Discover</a><a href="#journal">Journal</a><a href="#business">For businesses</a></div></div><div className="footer-bottom"><span>© 2026 LUSHORA. All rights reserved.</span><span>BEAUTY · WELLNESS · SKIN CARE</span></div></footer>
 
-    {selected && <div className="modal-backdrop" onClick={() => setSelected(null)}><form className="booking-modal" onSubmit={book} onClick={e => e.stopPropagation()}><button type="button" className="modal-close" onClick={() => setSelected(null)}>×</button><p className="eyebrow">YOUR LUSHORA MOMENT</p><h2>{selected.service.name}</h2><p className="modal-provider">{selected.provider.name} · {selected.provider.locality}, {selected.provider.city}</p><div className="modal-price">₹{selected.service.price_inr}<span> · {selected.service.duration_minutes} minutes</span></div><label>Your name<input required minLength="2" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></label><label>Mobile number<input required minLength="10" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="10-digit mobile number"/></label><label>Preferred appointment<input required type="datetime-local" min={new Date(Date.now() + 60000).toISOString().slice(0, 16)} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}/></label><button className="dark-button full-button">Send booking request <span>→</span></button><small className="booking-note">This preview creates a booking request. Live availability, payment and instant confirmation are not enabled yet.</small></form></div>}
+    
+    {authOpen && <div className="modal-backdrop" onClick={() => setAuthOpen(false)}><form className="booking-modal account-modal" onSubmit={submitAuth} onClick={e=>e.stopPropagation()}><button type="button" className="modal-close" onClick={()=>setAuthOpen(false)}>×</button><p className="eyebrow">LUSHORA ACCOUNT</p><h2>{authMode === 'register' ? 'Create your account' : 'Welcome back'}</h2><div className="auth-switch"><button type="button" onClick={()=>setAuthMode('login')} className={authMode==='login'?'active':''}>Log in</button><button type="button" onClick={()=>setAuthMode('register')} className={authMode==='register'?'active':''}>Register</button></div>{authMode==='register' && <><label>Full name<input required minLength="2" value={authForm.full_name} onChange={e=>setAuthForm({...authForm,full_name:e.target.value})}/></label><label>Mobile number<input value={authForm.phone} onChange={e=>setAuthForm({...authForm,phone:e.target.value})} placeholder="Optional"/></label><label>Account type<select value={authForm.role} onChange={e=>setAuthForm({...authForm,role:e.target.value})}><option value="customer">Customer</option><option value="provider">Beauty business</option></select></label></>}<label>Email<input type="email" required value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})}/></label><label>Password<input type="password" required minLength="8" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})}/></label><button className="dark-button full-button">{authMode==='register'?'Create account':'Log in'} <span>→</span></button></form></div>}
+    {businessOpen && <div className="modal-backdrop" onClick={()=>setBusinessOpen(false)}><form className="booking-modal" onSubmit={submitBusiness} onClick={e=>e.stopPropagation()}><button type="button" className="modal-close" onClick={()=>setBusinessOpen(false)}>×</button><p className="eyebrow">JOIN THE LUSHORA EDIT</p><h2>List your business</h2><label>Business name<input required value={businessForm.name} onChange={e=>setBusinessForm({...businessForm,name:e.target.value})}/></label><label>Category<select value={businessForm.category} onChange={e=>setBusinessForm({...businessForm,category:e.target.value})}>{['Makeup','Salon','Skin Clinic','Nail Studio'].map(c=><option key={c}>{c}</option>)}</select></label><label>City<select value={businessForm.city} onChange={e=>setBusinessForm({...businessForm,city:e.target.value})}>{cityOptions.slice(1).map(c=><option key={c}>{c}</option>)}</select></label><label>Locality<input value={businessForm.locality} onChange={e=>setBusinessForm({...businessForm,locality:e.target.value})}/></label><label>About your business<textarea value={businessForm.description} onChange={e=>setBusinessForm({...businessForm,description:e.target.value})}/></label><button className="dark-button full-button">Submit for review <span>→</span></button><small className="booking-note">Business listings are reviewed before they appear publicly.</small></form></div>}
+\n    {selected && <div className="modal-backdrop" onClick={() => setSelected(null)}><form className="booking-modal" onSubmit={book} onClick={e => e.stopPropagation()}><button type="button" className="modal-close" onClick={() => setSelected(null)}>×</button><p className="eyebrow">YOUR LUSHORA MOMENT</p><h2>{selected.service.name}</h2><p className="modal-provider">{selected.provider.name} · {selected.provider.locality}, {selected.provider.city}</p><div className="modal-price">₹{selected.service.price_inr}<span> · {selected.service.duration_minutes} minutes</span></div><label>Your name<input required minLength="2" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}/></label><label>Mobile number<input required minLength="10" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="10-digit mobile number"/></label><label>Preferred appointment<input required type="datetime-local" min={new Date(Date.now() + 60000).toISOString().slice(0, 16)} value={form.date} onChange={e => setForm({ ...form, date: e.target.value })}/></label><button className="dark-button full-button">Send booking request <span>→</span></button><small className="booking-note">This preview creates a booking request. Live availability, payment and instant confirmation are not enabled yet.</small></form></div>}
   </>;
 }
 
