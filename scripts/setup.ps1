@@ -18,7 +18,8 @@ function Find-Python {
     }
   }
   return $null
-}$Python = Find-Python
+}
+$Python = Find-Python
 if (-not $Python) {
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Host 'Python not found. Installing Python 3.12 with winget...' -ForegroundColor Yellow
