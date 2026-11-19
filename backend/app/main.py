@@ -152,6 +152,40 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     db.refresh(booking)
     return booking
 
+
+@app.patch("/api/bookings/{booking_id}/status")
+def update_booking_status(booking_id: int, status: str = Query(...), user: models.User = Depends(current_user), db: Session = Depends(get_db)):
+    allowed = {"confirmed", "rejected", "cancelled", "completed"}
+    if status not in allowed: raise HTTPException(400, "Unsupported booking status")
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking: raise HTTPException(404, "Booking not found")
+    provider = db.query(models.Provider).filter(models.Provider.id == booking.provider_id).first()
+    is_admin = user.role == "admin"
+    is_provider_owner = user.role == "provider" and provider and provider.owner_user_id == user.id
+    is_customer_owner = user.role == "customer" and booking.customer_user_id == user.id
+    if not (is_admin or is_provider_owner or is_customer_owner): raise HTTPException(403, "You cannot update this booking")
+    if status in {"confirmed", "rejected", "completed"} and not (is_admin or is_provider_owner):
+        raise HTTPException(403, "Only the provider or admin can set this status")
+    if status == "completed" and booking.status != "confirmed": raise HTTPException(400, "Only confirmed bookings can be completed")
+    if status == "confirmed" and booking.status != "requested": raise HTTPException(400, "Only requested bookings can be confirmed")
+    if status == "rejected" and booking.status != "requested": raise HTTPException(400, "Only requested bookings can be rejected")
+    if status == "cancelled" and booking.status not in {"requested", "confirmed"}: raise HTTPException(400, "This booking cannot be cancelled")
+    booking.status = status
+    db.commit()
+    return {"id": booking.id, "status": booking.status}
+
+@app.get("/api/provider/me/bookings")
+def provider_bookings(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
+    if not provider: raise HTTPException(404, "Business profile not found")
+    return db.query(models.Booking).filter(models.Booking.provider_id == provider.id).order_by(models.Booking.appointment_at.asc()).all()
+
+@app.get("/api/provider/me")
+def provider_me(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider = db.query(models.Provider).options(joinedload(models.Provider.services)).filter(models.Provider.owner_user_id == user.id).first()
+    if not provider: raise HTTPException(404, "Business profile not found")
+    return provider
+
 @app.get("/api/bookings", response_model=list[schemas.BookingOut])
 def list_bookings(db: Session = Depends(get_db), user: models.User = Depends(require_role("admin"))):
     return db.query(models.Booking).order_by(models.Booking.created_at.desc()).all()
