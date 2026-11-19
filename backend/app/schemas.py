@@ -37,3 +37,35 @@ class BookingOut(BaseModel):
     appointment_at: datetime
     status: str
     notes: str
+
+
+class RegisterIn(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=255)
+    phone: str = Field(default="", max_length=20)
+    password: str = Field(min_length=8, max_length=128)
+    role: str = Field(default="customer")
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+class UserOut(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    phone: str
+    role: str
+    is_active: bool
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+class ProviderRegistrationIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    category: str
+    city: str
+    locality: str = ""
+    description: str = ""
