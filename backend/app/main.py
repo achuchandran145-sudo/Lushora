@@ -80,7 +80,35 @@ def bootstrap_admin_from_environment():
 
 CATEGORIES = ["Makeup", "Salon", "Skin Clinic", "Nail Studio"]
 
-# LUSHORA v2: area-based marketplace and sequential customer-lead distribution.
+
+
+@app.post("/api/v2/admin/subscriptions",status_code=201)
+def create_subscription(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    provider_id=int(payload.get("provider_id",0));area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();tier=str(payload.get("tier","")).lower()
+    if tier not in {"premium","standard"}: raise HTTPException(400,"Tier must be premium or standard")
+    price=3000 if tier=="premium" else 1500
+    provider=db.query(models.Provider).filter(models.Provider.id==provider_id,models.Provider.approval_status=="approved",models.Provider.category==category).first()
+    area=db.query(models.MarketplaceArea).filter(models.MarketplaceArea.id==area_id,models.MarketplaceArea.is_active==True).first()
+    if not provider or not area: raise HTTPException(404,"Approved business or area not found")
+    sub=models.BusinessSubscription(provider_id=provider_id,area_id=area_id,category=category,tier=tier,monthly_price_inr=price,status="pending")
+    db.add(sub);db.commit();db.refresh(sub)
+    return {"id":sub.id,"tier":tier,"monthly_price_inr":price,"status":sub.status,"message":"Subscription created pending payment/activation"}
+
+@app.get("/api/v2/admin/subscriptions")
+def list_subscriptions(user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rows=db.query(models.BusinessSubscription,models.Provider,models.MarketplaceArea).join(models.Provider,models.Provider.id==models.BusinessSubscription.provider_id).join(models.MarketplaceArea,models.MarketplaceArea.id==models.BusinessSubscription.area_id).order_by(models.BusinessSubscription.created_at.desc()).all()
+    return [{"id":s.id,"business":p.name,"provider_id":p.id,"city":a.city,"locality":a.locality,"category":s.category,"tier":s.tier,"price":s.monthly_price_inr,"status":s.status,"starts_at":s.starts_at,"ends_at":s.ends_at} for s,p,a in rows]
+
+@app.patch("/api/v2/admin/subscriptions/{subscription_id}")
+def update_subscription(subscription_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    sub=db.query(models.BusinessSubscription).filter(models.BusinessSubscription.id==subscription_id).first()
+    if not sub: raise HTTPException(404,"Subscription not found")
+    status=str(payload.get("status","")).lower()
+    if status not in {"active","paused","expired","cancelled"}: raise HTTPException(400,"Unsupported subscription status")
+    sub.status=status
+    if status=="active" and not sub.starts_at: sub.starts_at=datetime.utcnow();sub.ends_at=datetime.utcnow()+timedelta(days=30)
+    db.commit();return {"id":sub.id,"status":sub.status,"starts_at":sub.starts_at,"ends_at":sub.ends_at}
+\n# LUSHORA v2: area-based marketplace and sequential customer-lead distribution.
 @app.post("/api/v2/admin/areas", status_code=201)
 def create_area(payload: dict, user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     city = str(payload.get("city", "")).strip(); locality = str(payload.get("locality", "")).strip()
