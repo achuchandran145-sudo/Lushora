@@ -60,3 +60,64 @@ class OTPChallenge(Base):
     consumed: Mapped[bool] = mapped_column(Boolean, default=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class MarketplaceArea(Base):
+    __tablename__ = "marketplace_areas"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    city: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    locality: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AreaRanking(Base):
+    __tablename__ = "area_rankings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    area_id: Mapped[int] = mapped_column(ForeignKey("marketplace_areas.id"), index=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), index=True, nullable=False)
+    rank_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    subscription_tier: Mapped[str] = mapped_column(String(20), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BusinessSubscription(Base):
+    __tablename__ = "business_subscriptions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), index=True, nullable=False)
+    area_id: Mapped[int] = mapped_column(ForeignKey("marketplace_areas.id"), index=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    tier: Mapped[str] = mapped_column(String(20), nullable=False)
+    monthly_price_inr: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CustomerLead(Base):
+    __tablename__ = "customer_leads"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    customer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    area_id: Mapped[int] = mapped_column(ForeignKey("marketplace_areas.id"), index=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    service_interest: Mapped[str] = mapped_column(String(120), default="")
+    customer_phone: Mapped[str] = mapped_column(String(20), nullable=False)
+    contact_consent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LeadDelivery(Base):
+    __tablename__ = "lead_deliveries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("customer_leads.id"), index=True, nullable=False)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), index=True, nullable=False)
+    rank_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="scheduled", index=True)
+    response_status: Mapped[str] = mapped_column(String(20), default="pending")
+    response_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
