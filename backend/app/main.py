@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Depends, HTTPException, Query
+import os, re, json, hmac, hashlib, base64
+from fastapi import FastAPI, Depends, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
@@ -9,7 +10,88 @@ from . import models, schemas
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and wellness discovery and booking MVP")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()
+TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
+
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode().rstrip("=")
+
+def _password_hash(password: str) -> str:
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 180000)
+    return "pbkdf2_sha256$180000$" + _b64(salt) + "$" + _b64(digest)
+
+def _password_verify(password: str, stored: str) -> bool:
+    try:
+        scheme, rounds, salt, digest = stored.split("$")
+        if scheme != "pbkdf2_sha256": return False
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode(), base64.urlsafe_b64decode(salt + "=="), int(rounds))
+        return hmac.compare_digest(_b64(actual), digest)
+    except Exception:
+        return False
+
+def _make_token(user_id: int) -> str:
+    payload = _b64(json.dumps({"sub": user_id, "exp": int(datetime.utcnow().timestamp()) + TOKEN_TTL_SECONDS}).encode())
+    signature = _b64(hmac.new(AUTH_SECRET, payload.encode(), hashlib.sha256).digest())
+    return payload + "." + signature
+
+def _get_user_from_token(token: str, db: Session):
+    try:
+        payload, signature = token.split(".")
+        expected = _b64(hmac.new(AUTH_SECRET, payload.encode(), hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected): return None
+        data = json.loads(base64.urlsafe_b64decode(payload + "=="))
+        if int(data["exp"]) < int(datetime.utcnow().timestamp()): return None
+        user = db.query(models.User).filter(models.User.id == int(data["sub"]), models.User.is_active == True).first()
+        return user
+    except Exception:
+        return None
+
+def current_user(authorization: str | None = Header(default=None), db: Session = Depends(get_db)):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "Authentication required")
+    user = _get_user_from_token(authorization[7:].strip(), db)
+    if not user: raise HTTPException(401, "Invalid or expired token")
+    return user
+
+def require_role(role: str):
+    def dependency(user: models.User = Depends(current_user)):
+        if user.role != role: raise HTTPException(403, "Insufficient permissions")
+        return user
+    return dependency
+
 CATEGORIES = ["Makeup", "Salon", "Skin Clinic", "Nail Studio"]
+
+
+@app.post("/api/auth/register", response_model=schemas.TokenOut, status_code=201)
+def register(payload: schemas.RegisterIn, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email): raise HTTPException(400, "Valid email is required")
+    if payload.role not in ["customer", "provider"]: raise HTTPException(400, "Role must be customer or provider")
+    if db.query(models.User).filter(models.User.email == email).first(): raise HTTPException(409, "Email already registered")
+    user = models.User(full_name=payload.full_name.strip(), email=email, phone=payload.phone.strip(), password_hash=_password_hash(payload.password), role=payload.role)
+    db.add(user); db.commit(); db.refresh(user)
+    return {"access_token": _make_token(user.id), "user": user}
+
+@app.post("/api/auth/login", response_model=schemas.TokenOut)
+def login(payload: schemas.LoginIn, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.email == payload.email.strip().lower()).first()
+    if not user or not _password_verify(payload.password, user.password_hash) or not user.is_active:
+        raise HTTPException(401, "Email or password is incorrect")
+    return {"access_token": _make_token(user.id), "user": user}
+
+@app.get("/api/auth/me", response_model=schemas.UserOut)
+def me(user: models.User = Depends(current_user)):
+    return user
+
+@app.post("/api/provider/register", status_code=201)
+def provider_registration(payload: schemas.ProviderRegistrationIn, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    existing = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
+    if existing: raise HTTPException(409, "A business profile already exists for this account")
+    provider = models.Provider(owner_user_id=user.id, approval_status="pending", verified=False, name=payload.name, category=payload.category, city=payload.city, locality=payload.locality, description=payload.description)
+    db.add(provider); db.commit(); db.refresh(provider)
+    return {"id": provider.id, "approval_status": provider.approval_status, "message": "Business submitted for admin approval"}
 
 @app.get("/api/health")
 def health():
@@ -23,7 +105,7 @@ def categories():
 def list_providers(category: str | None = None, city: str | None = None, locality: str | None = None,
                    min_price: int | None = Query(default=None, ge=0), max_price: int | None = Query(default=None, ge=0),
                    verified: bool | None = None, db: Session = Depends(get_db)):
-    q = db.query(models.Provider).options(joinedload(models.Provider.services))
+    q = db.query(models.Provider).options(joinedload(models.Provider.services)).filter(models.Provider.approval_status == "approved")
     if category: q = q.filter(func.lower(models.Provider.category) == category.lower())
     if city: q = q.filter(func.lower(models.Provider.city) == city.lower())
     if locality: q = q.filter(func.lower(models.Provider.locality).contains(locality.lower()))
@@ -71,11 +153,11 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     return booking
 
 @app.get("/api/bookings", response_model=list[schemas.BookingOut])
-def list_bookings(db: Session = Depends(get_db)):
+def list_bookings(db: Session = Depends(get_db), user: models.User = Depends(require_role("admin"))):
     return db.query(models.Booking).order_by(models.Booking.created_at.desc()).all()
 
 @app.get("/api/admin/summary")
-def admin_summary(db: Session = Depends(get_db)):
+def admin_summary(db: Session = Depends(get_db), user: models.User = Depends(require_role("admin"))):
     return {"providers": db.query(models.Provider).count(), "services": db.query(models.Service).count(),
             "bookings": db.query(models.Booking).count(),
             "requested_bookings": db.query(models.Booking).filter(models.Booking.status == "requested").count()}
