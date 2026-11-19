@@ -159,7 +159,12 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
         if payload.appointment_at < existing_end and new_end > existing_booking.appointment_at:
             raise HTTPException(409, "This provider already has a booking during the selected time")
 
-    attached_user = None\n    if authorization and authorization.lower().startswith("bearer "):\n        attached_user = _get_user_from_token(authorization[7:].strip(), db)\n        if not attached_user: raise HTTPException(401, "Invalid or expired token")\n        if attached_user.role != "customer": raise HTTPException(403, "Only customer accounts can book")\n    booking = models.Booking(**payload.model_dump(), customer_user_id=attached_user.id if attached_user else None)
+    attached_user = None
+    if authorization and authorization.lower().startswith("bearer "):
+        attached_user = _get_user_from_token(authorization[7:].strip(), db)
+        if not attached_user: raise HTTPException(401, "Invalid or expired token")
+        if attached_user.role != "customer": raise HTTPException(403, "Only customer accounts can book")
+    booking = models.Booking(**payload.model_dump(), customer_user_id=attached_user.id if attached_user else None)
     db.add(booking)
     try:
         db.commit()
