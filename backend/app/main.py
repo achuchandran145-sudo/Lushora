@@ -80,6 +80,65 @@ def bootstrap_admin_from_environment():
 
 CATEGORIES = ["Makeup", "Salon", "Skin Clinic", "Nail Studio"]
 
+# LUSHORA v2: area-based marketplace and sequential customer-lead distribution.
+@app.post("/api/v2/admin/areas", status_code=201)
+def create_area(payload: dict, user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    city = str(payload.get("city", "")).strip(); locality = str(payload.get("locality", "")).strip()
+    if not city or not locality: raise HTTPException(400, "City and locality are required")
+    area = db.query(models.MarketplaceArea).filter(func.lower(models.MarketplaceArea.city)==city.lower(),func.lower(models.MarketplaceArea.locality)==locality.lower()).first()
+    if area: return {"id": area.id, "city": area.city, "locality": area.locality, "message": "Area already exists"}
+    area=models.MarketplaceArea(city=city,locality=locality);db.add(area);db.commit();db.refresh(area)
+    return {"id":area.id,"city":area.city,"locality":area.locality}
+
+@app.get("/api/v2/areas")
+def list_areas(db: Session = Depends(get_db)):
+    return db.query(models.MarketplaceArea).filter(models.MarketplaceArea.is_active==True).order_by(models.MarketplaceArea.city,models.MarketplaceArea.locality).all()
+
+@app.put("/api/v2/admin/rankings")
+def set_area_rankings(payload: dict, user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();items=payload.get("providers",[])
+    if not area_id or not category: raise HTTPException(400,"Area and category are required")
+    if len(items)>10: raise HTTPException(400,"Only Top 10 placements are allowed")
+    db.query(models.AreaRanking).filter(models.AreaRanking.area_id==area_id,models.AreaRanking.category==category).delete()
+    for i,item in enumerate(items,1):
+        provider_id=int(item.get("provider_id"));tier="premium" if i<=5 else "standard"
+        provider=db.query(models.Provider).filter(models.Provider.id==provider_id,models.Provider.approval_status=="approved",models.Provider.category==category).first()
+        if not provider: raise HTTPException(400,f"Provider {provider_id} is not an approved provider in this category")
+        db.add(models.AreaRanking(area_id=area_id,category=category,provider_id=provider_id,rank_position=i,subscription_tier=tier,is_active=True))
+    db.commit();return {"area_id":area_id,"category":category,"rankings_saved":len(items)}
+
+@app.get("/api/v2/admin/rankings")
+def get_area_rankings(area_id:int,category:str,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rows=db.query(models.AreaRanking,models.Provider).join(models.Provider,models.Provider.id==models.AreaRanking.provider_id).filter(models.AreaRanking.area_id==area_id,models.AreaRanking.category==category,models.AreaRanking.is_active==True).order_by(models.AreaRanking.rank_position).all()
+    return [{"rank":r.rank_position,"provider_id":p.id,"business":p.name,"tier":r.subscription_tier} for r,p in rows]
+
+@app.post("/api/v2/customer/leads",status_code=201)
+def create_customer_lead(payload:dict,user:models.User=Depends(require_role("customer")),db:Session=Depends(get_db)):
+    if payload.get("contact_consent") is not True: raise HTTPException(400,"Customer consent to share contact details is required")
+    area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();interest=str(payload.get("service_interest","")).strip()
+    if not area_id or not category: raise HTTPException(400,"Area and category are required")
+    area=db.query(models.MarketplaceArea).filter(models.MarketplaceArea.id==area_id,models.MarketplaceArea.is_active==True).first()
+    if not area: raise HTTPException(404,"Area not found")
+    if not user.phone: raise HTTPException(400,"Verified customer phone number is missing")
+    rankings=db.query(models.AreaRanking).filter(models.AreaRanking.area_id==area_id,models.AreaRanking.category==category,models.AreaRanking.is_active==True).order_by(models.AreaRanking.rank_position).all()
+    if not rankings: raise HTTPException(404,"No ranked businesses are available for this area and category")
+    lead=models.CustomerLead(customer_user_id=user.id,area_id=area_id,category=category,service_interest=interest,customer_phone=user.phone,contact_consent=True)
+    db.add(lead);db.flush();now=datetime.utcnow()
+    for ranking in rankings[:10]: db.add(models.LeadDelivery(lead_id=lead.id,provider_id=ranking.provider_id,rank_position=ranking.rank_position,scheduled_at=now+timedelta(minutes=3*(ranking.rank_position-1))))
+    db.commit();return {"lead_id":lead.id,"deliveries_scheduled":min(len(rankings),10),"first_delivery_at":now.isoformat(),"interval_minutes":3,"message":"Lead created. Sequential distribution is scheduled."}
+
+@app.get("/api/v2/provider/me/leads")
+def provider_leads(user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(403,"Business profile not found")
+    now=datetime.utcnow()
+    due=db.query(models.LeadDelivery).filter(models.LeadDelivery.provider_id==provider.id,models.LeadDelivery.status=="scheduled",models.LeadDelivery.scheduled_at<=now).all()
+    for delivery in due: delivery.status="sent";delivery.sent_at=now
+    db.commit()
+    rows=db.query(models.LeadDelivery,models.CustomerLead,models.MarketplaceArea).join(models.CustomerLead,models.CustomerLead.id==models.LeadDelivery.lead_id).join(models.MarketplaceArea,models.MarketplaceArea.id==models.CustomerLead.area_id).filter(models.LeadDelivery.provider_id==provider.id,models.LeadDelivery.status=="sent").order_by(models.LeadDelivery.sent_at.desc()).all()
+    return [{"lead_id":lead.id,"delivery_id":delivery.id,"rank":delivery.rank_position,"city":area.city,"locality":area.locality,"category":lead.category,"service_interest":lead.service_interest,"customer_phone":lead.customer_phone if lead.contact_consent else None,"sent_at":delivery.sent_at,"response_status":delivery.response_status} for delivery,lead,area in rows]
+
+
 # Customer phone OTP authentication (development OTP only until SMS gateway is configured)
 OTP_DEV_MODE = os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true"
 OTP_TTL_MINUTES = 5
