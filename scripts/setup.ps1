@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Write-Host '=== LUSHORA setup ===' -ForegroundColor Magenta
-$script:PythonArgs = @()\nfunction Find-Python {
+$script:PythonArgs = @()
+function Find-Python {
   # Prefer versions with stable wheel support for the pinned backend dependencies.
   foreach ($version in @('3.13','3.12')) {
     if (Get-Command py -ErrorAction SilentlyContinue) {
