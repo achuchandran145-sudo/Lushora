@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Write-Host '=== LUSHORA setup ===' -ForegroundColor Magenta
-function Find-Python {
+$script:PythonArgs = @()\nfunction Find-Python {
   # Prefer versions with stable wheel support for the pinned backend dependencies.
   foreach ($version in @('3.13','3.12')) {
     if (Get-Command py -ErrorAction SilentlyContinue) {
-      try { & py "-$version" --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { return "py -$version" } } catch {}
+      try { & py "-$version" --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $script:PythonArgs = @("-$version"); return "py" } } catch {}
     }
   }
   foreach ($cmd in @('python','python3')) {
@@ -40,7 +40,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue) -or -not (Get-Command 
   throw 'Node.js LTS is required. Install from https://nodejs.org/ then rerun this launcher.'
 }
 Set-Location $Root
-if (-not (Test-Path 'backend\.venv')) { & $Python -m venv 'backend\.venv' }
+if (-not (Test-Path 'backend\.venv')) { & $Python @script:PythonArgs -m venv 'backend\.venv' }
 $PyExe = Join-Path $Root 'backend\.venv\Scripts\python.exe'
 & $PyExe -m pip install --upgrade pip
 & $PyExe -m pip install -r 'backend\requirements.txt'
