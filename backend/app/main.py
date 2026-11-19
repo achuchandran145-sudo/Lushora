@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-from .database import Base, engine, get_db
+from .database import Base, engine, get_db, migrate_sqlite_schema
 from . import models, schemas
 
 Base.metadata.create_all(bind=engine)
@@ -64,6 +64,7 @@ def require_role(role: str):
 
 @app.on_event("startup")
 def bootstrap_admin_from_environment():
+    migrate_sqlite_schema()
     email = os.getenv("LUSHORA_ADMIN_EMAIL", "").strip().lower()
     password = os.getenv("LUSHORA_ADMIN_PASSWORD", "")
     if not email or not password or len(password) < 12:
