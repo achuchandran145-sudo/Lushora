@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
+import PortalApp from './portal.jsx';
 
 const API = import.meta.env.VITE_LUSHORA_API || 'http://127.0.0.1:8000/api';
 const categories = [
@@ -166,7 +167,7 @@ function App() {
     <header className="site-header">
       <a className="wordmark" href="#top" aria-label="LUSHORA home"><span className="mark">✿</span><span>LUSHORA</span><small>BEAUTY · WELLNESS · SKIN</small></a>
       <nav className="main-nav"><a href="#discover">Discover</a><a href="#journal">The Journal</a><a href="#business">For businesses</a></nav>
-      <div className="header-actions"><button className="text-button" onClick={() => document.getElementById('business')?.scrollIntoView({ behavior: 'smooth' })}>List your business</button>{account && <button className="text-button" onClick={openDashboard}>Dashboard</button>}<button className="login-button" onClick={() => { if (account) { localStorage.removeItem('lushora-account'); setAccount(null); setNotice('You have signed out.'); } else { setAuthMode('login'); setAuthOpen(true); } }}>{account ? 'Sign out' : 'Log in'} <span>↗</span></button></div>
+      <div className="header-actions"><button className="text-button" onClick={() => document.getElementById('business')?.scrollIntoView({ behavior: 'smooth' })}>List your business</button>{account && <button className="text-button" onClick={openDashboard}>Dashboard</button>}<button className="login-button" onClick={() => { if (account) { localStorage.removeItem('lushora-account'); setAccount(null); setNotice('You have signed out.'); } else { window.location.href = '/customer/login'; } }}>{account ? 'Sign out' : 'Log in'} <span>↗</span></button></div>
     </header>
 
     <main id="top">
@@ -213,7 +214,7 @@ function App() {
 
       <section className="journal-section" id="journal"><div className="section-title"><div><p className="eyebrow">NOTES ON BEAUTY & WELLNESS</p><h2>A little inspiration, thoughtfully chosen.</h2></div><span className="journal-side">THE LUSHORA JOURNAL · 001</span></div><div className="journal-grid">{editorial.map(item => <article className="journal-card" key={item.title}><img src={item.image} alt="Beauty editorial"/><div><span className="eyebrow">{item.kicker}</span><h3>{item.title}</h3><span className="read-link">Explore the story ↗</span></div></article>)}</div></section>
 
-      <section className="business-banner" id="business"><div><p className="eyebrow light">FOR THE PEOPLE BEHIND THE BEAUTY</p><h2>Your craft deserves<br/><em>to be discovered.</em></h2><p>Bring your business to a community looking for their next favourite beauty experience.</p></div><button className="light-button" onClick={() => setBusinessOpen(true)}>List your business <span>↗</span></button></section>
+      <section className="business-banner" id="business"><div><p className="eyebrow light">FOR THE PEOPLE BEHIND THE BEAUTY</p><h2>Your craft deserves<br/><em>to be discovered.</em></h2><p>Bring your business to a community looking for their next favourite beauty experience.</p></div><button className="light-button" onClick={() => { window.location.href = '/business/login'; }}>List your business <span>↗</span></button></section>
     </main>
 
     <footer className="site-footer"><div className="footer-top"><a className="wordmark footer-wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span></a><p>Discover beauty. Find your people. Make time for you.</p><div className="footer-links"><a href="#discover">Discover</a><a href="#journal">Journal</a><a href="#business">For businesses</a></div></div><div className="footer-bottom"><span>© 2026 LUSHORA. All rights reserved.</span><span>BEAUTY · WELLNESS · SKIN CARE</span></div></footer>
@@ -229,4 +230,5 @@ function App() {
   </>;
 }
 
-createRoot(document.getElementById('root')).render(<App/>);
+const portalPath = window.location.pathname;
+createRoot(document.getElementById('root')).render(portalPath.startsWith('/customer') || portalPath.startsWith('/business') || portalPath.startsWith('/admin') ? <PortalApp/> : <App/>);
