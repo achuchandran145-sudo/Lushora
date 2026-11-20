@@ -108,7 +108,8 @@ def update_subscription(subscription_id:int,payload:dict,user:models.User=Depend
     sub.status=status
     if status=="active" and not sub.starts_at: sub.starts_at=datetime.utcnow();sub.ends_at=datetime.utcnow()+timedelta(days=30)
     db.commit();return {"id":sub.id,"status":sub.status,"starts_at":sub.starts_at,"ends_at":sub.ends_at}
-\n# LUSHORA v2: area-based marketplace and sequential customer-lead distribution.
+
+# LUSHORA v2: area-based marketplace and sequential customer-lead distribution.
 @app.post("/api/v2/admin/areas", status_code=201)
 def create_area(payload: dict, user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     city = str(payload.get("city", "")).strip(); locality = str(payload.get("locality", "")).strip()
