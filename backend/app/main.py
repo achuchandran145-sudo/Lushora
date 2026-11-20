@@ -418,3 +418,84 @@ def seed_demo(db: Session = Depends(get_db)):
         for sn,price,duration in services: db.add(models.Service(provider_id=p.id,name=sn,price_inr=price,duration_minutes=duration))
     db.commit()
     return {"message":"Demo providers created", "providers":len(records)}
+
+# Business verification and subscription policy MVP
+from pathlib import Path
+from fastapi import UploadFile, File
+from fastapi.responses import FileResponse
+import uuid
+
+VERIFICATION_UPLOAD_DIR = Path(os.getenv("LUSHORA_VERIFICATION_UPLOAD_DIR", "./private_verification_uploads")).resolve()
+VERIFICATION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_DOC_TYPES = {"application/pdf", "image/jpeg", "image/png"}
+MAX_DOC_BYTES = 8 * 1024 * 1024
+
+@app.post("/api/v2/provider/verification/submit", status_code=201)
+def submit_business_verification(payload: dict, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    name=str(payload.get("business_name","")).strip(); city=str(payload.get("city","")).strip(); locality=str(payload.get("locality","")).strip(); address=str(payload.get("address","")).strip()
+    categories=payload.get("categories",[])
+    if not name or not city or not locality or not address: raise HTTPException(400,"Business name, city, locality and address are required")
+    if not isinstance(categories,list) or not categories or any(c not in CATEGORIES for c in categories): raise HTTPException(400,"Select one or more valid business categories")
+    last4=str(payload.get("aadhaar_last4","")).strip()
+    pan=str(payload.get("pan_number","")).strip().upper()
+    if last4 and not re.fullmatch(r"\\d{4}",last4): raise HTTPException(400,"Aadhaar last 4 digits must be numeric")
+    if pan and not re.fullmatch(r"[A-Z]{5}\\d{4}[A-Z]",pan): raise HTTPException(400,"Enter a valid PAN format")
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
+    if row and row.status in {"submitted","under_review","approved"}: raise HTTPException(409,"A verification request already exists. Contact support/admin for changes.")
+    if not row: row=models.BusinessVerification(owner_user_id=user.id,business_name=name,categories_json=json.dumps(categories),city=city,locality=locality,address=address,aadhaar_last4=last4,pan_number=pan,status="submitted");db.add(row)
+    else:
+        row.business_name=name;row.categories_json=json.dumps(categories);row.city=city;row.locality=locality;row.address=address;row.aadhaar_last4=last4;row.pan_number=pan;row.status="submitted";row.admin_notes=""
+    db.commit();db.refresh(row)
+    return {"id":row.id,"status":row.status,"message":"Verification submitted. Your account remains pending admin approval."}
+
+@app.post("/api/v2/provider/verification/document/{doc_type}")
+async def upload_verification_document(doc_type: str, file: UploadFile = File(...), user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    if doc_type not in {"aadhaar","pan","business"}: raise HTTPException(400,"Unsupported document type")
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
+    if not row: raise HTTPException(404,"Submit verification details before uploading documents")
+    if file.content_type not in ALLOWED_DOC_TYPES: raise HTTPException(400,"Only PDF, JPG or PNG files are accepted")
+    data=await file.read(MAX_DOC_BYTES+1)
+    if len(data)>MAX_DOC_BYTES: raise HTTPException(413,"Document must be 8 MB or smaller")
+    suffix={"application/pdf":".pdf","image/jpeg":".jpg","image/png":".png"}[file.content_type]
+    safe_name=f"{user.id}_{doc_type}_{uuid.uuid4().hex}{suffix}"
+    (VERIFICATION_UPLOAD_DIR/safe_name).write_bytes(data)
+    setattr(row,doc_type+"_document_name",safe_name);db.commit()
+    return {"uploaded":True,"document_type":doc_type,"message":"Document uploaded to private local storage"}
+
+@app.get("/api/v2/admin/verifications")
+def admin_verification_list(status: str = "submitted", user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    rows=db.query(models.BusinessVerification).filter(models.BusinessVerification.status==status).order_by(models.BusinessVerification.submitted_at.asc()).all()
+    return [{"id":r.id,"owner_user_id":r.owner_user_id,"business_name":r.business_name,"categories":json.loads(r.categories_json),"city":r.city,"locality":r.locality,"address":r.address,"aadhaar_last4":r.aadhaar_last4,"pan_number":r.pan_number,"documents":{"aadhaar":bool(r.aadhaar_document_name),"pan":bool(r.pan_document_name),"business":bool(r.business_document_name)},"status":r.status,"admin_notes":r.admin_notes,"submitted_at":r.submitted_at} for r in rows]
+
+@app.get("/api/v2/admin/verifications/{verification_id}/document/{doc_type}")
+def admin_get_verification_document(verification_id:int,doc_type:str,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    if doc_type not in {"aadhaar","pan","business"}: raise HTTPException(400,"Unsupported document type")
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
+    if not row: raise HTTPException(404,"Verification not found")
+    filename=getattr(row,doc_type+"_document_name","")
+    if not filename or not (VERIFICATION_UPLOAD_DIR/filename).exists(): raise HTTPException(404,"Document not uploaded")
+    return FileResponse(VERIFICATION_UPLOAD_DIR/filename,filename=doc_type+"_verification_document",media_type="application/octet-stream")
+
+@app.patch("/api/v2/admin/verifications/{verification_id}")
+def admin_review_verification(verification_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
+    if not row: raise HTTPException(404,"Verification not found")
+    action=str(payload.get("status","")).lower();notes=str(payload.get("admin_notes","")).strip()
+    if action not in {"approved","rejected","under_review"}: raise HTTPException(400,"Status must be approved, rejected or under_review")
+    if action=="approved" and (not row.aadhaar_document_name or not row.pan_document_name or not row.business_document_name): raise HTTPException(400,"All three verification documents must be uploaded before approval")
+    row.status=action;row.admin_notes=notes;row.reviewed_at=datetime.utcnow() if action in {"approved","rejected"} else None
+    if action=="approved":
+        userrow=db.query(models.User).filter(models.User.id==row.owner_user_id).first()
+        if userrow: userrow.is_active=True
+        cats=json.loads(row.categories_json)
+        # Create provider listing records per selected category; MVP uses category-specific provider records.
+        for cat in cats:
+            existing=db.query(models.Provider).filter(models.Provider.owner_user_id==row.owner_user_id,models.Provider.category==cat).first()
+            if not existing: db.add(models.Provider(owner_user_id=row.owner_user_id,approval_status="approved",name=row.business_name,category=cat,city=row.city,locality=row.locality,description=row.address,verified=True))
+    db.commit();return {"id":row.id,"status":row.status,"message":"Verification review updated"}
+
+@app.get("/api/v2/provider/verification/me")
+def provider_verification_me(user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
+    if not row: return {"status":"not_submitted"}
+    return {"id":row.id,"business_name":row.business_name,"categories":json.loads(row.categories_json),"city":row.city,"locality":row.locality,"address":row.address,"documents":{"aadhaar":bool(row.aadhaar_document_name),"pan":bool(row.pan_document_name),"business":bool(row.business_document_name)},"status":row.status,"admin_notes":row.admin_notes}
