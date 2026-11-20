@@ -68,6 +68,17 @@ function LoginPortal({ kind }) {
   </main>
 }
 
+
+function BusinessVerificationForm(){
+ const [account]=useState(()=>{try{return JSON.parse(localStorage.getItem('lushora-business')||'null')}catch{return null}});
+ const [form,setForm]=useState({business_name:'',categories:[],city:'Coimbatore',locality:'',address:'',aadhaar_last4:'',pan_number:''});
+ const [files,setFiles]=useState({aadhaar:null,pan:null,business:null});const [status,setStatus]=useState('');const [busy,setBusy]=useState(false);
+ const api='http://127.0.0.1:8000/api';const token=account?.access_token;
+ function set(k,v){setForm({...form,[k]:v})} function toggle(c){setForm({...form,categories:form.categories.includes(c)?form.categories.filter(x=>x!==c):[...form.categories,c]})}
+ async function submit(e){e.preventDefault();if(!token){setStatus('Please log in again.');return}setBusy(true);setStatus('');try{const r=await fetch(api+'/v2/provider/verification/submit',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(form)});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Submission failed');for(const t of ['aadhaar','pan','business']){if(!files[t])throw new Error('Please select all three verification documents before submitting.');const fd=new FormData();fd.append('file',files[t]);const up=await fetch(api+'/v2/provider/verification/document/'+t,{method:'POST',headers:{Authorization:'Bearer '+token},body:fd});const ud=await up.json();if(!up.ok)throw new Error(ud.detail||'Document upload failed')}setStatus('Verification submitted. Your business is pending admin review.');}catch(e){setStatus(e.message)}finally{setBusy(false)}}
+ return <div className="lux-dashboard"><header><Logo/><button onClick={()=>location.href='/business/login'}>Sign out</button></header><section className="dash-hero"><p className="portal-kicker">BUSINESS VERIFICATION</p><h1>Verify your business</h1><p>Your account is not listed publicly until Admin verifies your details and documents.</p></section><form className="verification-form" onSubmit={submit}><h2>Business details</h2><label>Business name<input required value={form.business_name} onChange={e=>set('business_name',e.target.value)}/></label><label>Categories (select all applicable)</label><div className="verification-categories">{['Makeup','Salon','Skin Clinic','Nail Studio'].map(c=><label key={c}><input type="checkbox" checked={form.categories.includes(c)} onChange={()=>toggle(c)}/>{c}</label>)}</div><label>City<input required value={form.city} onChange={e=>set('city',e.target.value)}/></label><label>Locality / Area<input required value={form.locality} onChange={e=>set('locality',e.target.value)}/></label><label>Full business address<textarea required value={form.address} onChange={e=>set('address',e.target.value)}/></label><h2>Identity verification</h2><label>Aadhaar last 4 digits only<input maxLength={4} inputMode="numeric" value={form.aadhaar_last4} onChange={e=>set('aadhaar_last4',e.target.value.replace(/\D/g,'').slice(0,4))}/></label><label>PAN number<input maxLength={10} value={form.pan_number} onChange={e=>set('pan_number',e.target.value.toUpperCase())}/></label><p className="verification-note">Do not enter your full Aadhaar number here. Upload document copies only for this test environment. Production storage must use encrypted private storage and a compliant verification process.</p>{[['aadhaar','Aadhaar document'],['pan','PAN document'],['business','Business proof (GST / registration / license)']].map(([key,label])=><label key={key}>{label}<input type="file" accept=".pdf,.jpg,.jpeg,.png" required onChange={e=>setFiles({...files,[key]:e.target.files?.[0]||null})}/></label>)}<button disabled={busy||!form.categories.length}>{busy?'SUBMITTING…':'SUBMIT FOR ADMIN VERIFICATION'}</button>{status&&<div className="portal-notice">{status}</div>}</form></div>
+}
+
 function BusinessDashboard(){
  const [account]=useState(()=>{try{return JSON.parse(localStorage.getItem('lushora-business')||'null')}catch{return null}});
  const [notice,setNotice]=useState('');
@@ -82,7 +93,7 @@ function AdminDashboard(){
 }
 export default function PortalApp(){
  const path=location.pathname;
- if(path.startsWith('/business/onboarding')) return <LoginPortal kind="business"/>;
+ if(path.startsWith('/business/onboarding')) return <BusinessVerificationForm/>;
  if(path.startsWith('/business')) return <BusinessDashboard/>;
  if(path.startsWith('/admin')) return <AdminDashboard/>;
  return <LoginPortal kind="customer"/>;
