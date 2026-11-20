@@ -173,7 +173,7 @@ OTP_DEV_MODE = os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true"
 OTP_TTL_MINUTES = 5
 
 def _normalize_phone(phone: str) -> str:
-    digits = re.sub(r"\\D", "", phone or "")
+    digits = re.sub(r"\D", "", phone or "")
     if digits.startswith("91") and len(digits) == 12:
         digits = digits[2:]
     if len(digits) != 10:
@@ -203,7 +203,7 @@ def customer_otp_request(payload: dict, db: Session = Depends(get_db)):
 def customer_otp_verify(payload: dict, db: Session = Depends(get_db)):
     phone = _normalize_phone(str(payload.get("phone", "")))
     otp = str(payload.get("otp", "")).strip()
-    if not re.fullmatch(r"\\d{6}", otp):
+    if not re.fullmatch(r"\d{6}", otp):
         raise HTTPException(400, "Enter the 6-digit OTP")
     challenge = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.consumed == False).order_by(models.OTPChallenge.created_at.desc()).first()
     if not challenge or challenge.expires_at < datetime.utcnow():
