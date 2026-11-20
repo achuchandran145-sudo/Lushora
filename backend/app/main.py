@@ -422,6 +422,44 @@ def provider_delete_service(service_id: int, user: models.User = Depends(require
     db.delete(service); db.commit()
     return {"message": "Service deleted"}
 
+
+@app.get("/api/admin/users/report")
+def admin_users_report(start_date:str=Query(""),end_date:str=Query(""),role:str=Query(""),search:str=Query(""),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    q=db.query(models.User)
+    if role in {"customer","provider","admin"}: q=q.filter(models.User.role==role)
+    if start_date: q=q.filter(func.date(models.User.created_at)>=start_date)
+    if end_date: q=q.filter(func.date(models.User.created_at)<=end_date)
+    if search:
+        term=f"%{search.strip()}%"
+        q=q.filter((models.User.full_name.ilike(term))|(models.User.email.ilike(term))|(models.User.phone.ilike(term)))
+    users=q.order_by(models.User.created_at.desc()).all()
+    provider_users=db.query(models.User).filter(models.User.role=="provider")
+    customer_users=db.query(models.User).filter(models.User.role=="customer")
+    if start_date:
+        provider_users=provider_users.filter(func.date(models.User.created_at)>=start_date)
+        customer_users=customer_users.filter(func.date(models.User.created_at)>=start_date)
+    if end_date:
+        provider_users=provider_users.filter(func.date(models.User.created_at)<=end_date)
+        customer_users=customer_users.filter(func.date(models.User.created_at)<=end_date)
+    return {"total_customers":customer_users.count(),"total_business_accounts":provider_users.count(),"new_customers":customer_users.count(),"new_business_accounts":provider_users.count(),"users":[{"id":u.id,"name":u.full_name,"email":u.email,"phone":u.phone,"role":u.role,"active":u.is_active,"created_at":u.created_at.isoformat() if u.created_at else None,"address":None} for u in users]}
+
+@app.get("/api/admin/users/export.xlsx")
+def admin_users_export(start_date:str=Query(""),end_date:str=Query(""),role:str=Query(""),search:str=Query(""),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    q=db.query(models.User)
+    if role in {"customer","provider","admin"}:q=q.filter(models.User.role==role)
+    if start_date:q=q.filter(func.date(models.User.created_at)>=start_date)
+    if end_date:q=q.filter(func.date(models.User.created_at)<=end_date)
+    if search:
+        term=f"%{search.strip()}%";q=q.filter((models.User.full_name.ilike(term))|(models.User.email.ilike(term))|(models.User.phone.ilike(term)))
+    records=q.order_by(models.User.created_at.desc()).all()
+    wb=Workbook();ws=wb.active;ws.title="User Accounts";ws.append(["User ID","Name","Phone","Email","Account Type","Active","Registered At","Address"])
+    for u in records:ws.append([u.id,u.full_name,u.phone,u.email,u.role,u.is_active,u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "", "Not collected in current profile schema"])
+    for c in ws[1]:c.font=c.font.copy(bold=True)
+    for col,width in enumerate([12,24,18,32,18,12,24,40],1):ws.column_dimensions[chr(64+col)].width=width
+    ws.freeze_panes="A2";ws.auto_filter.ref=ws.dimensions
+    out=BytesIO();wb.save(out);out.seek(0)
+    return StreamingResponse(out,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":"attachment; filename=LUSHORA_Admin_User_Report.xlsx"})
+
 @app.get("/api/admin/summary")
 def admin_summary(db: Session = Depends(get_db), user: models.User = Depends(require_role("admin"))):
     return {"providers": db.query(models.Provider).count(), "services": db.query(models.Service).count(),
