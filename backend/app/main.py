@@ -441,7 +441,7 @@ def submit_business_verification(payload: dict, user: models.User = Depends(requ
     if last4 and not re.fullmatch(r"\d{4}",last4): raise HTTPException(400,"Aadhaar last 4 digits must be numeric")
     if pan and not re.fullmatch(r"[A-Z]{5}\d{4}[A-Z]",pan): raise HTTPException(400,"Enter a valid PAN format")
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
-    if row and row.status in {"submitted","under_review","approved"}: raise HTTPException(409,"A verification request already exists. Contact support/admin for changes.")
+    if row and row.status in {"under_review","approved"}: raise HTTPException(409,"Your verification is already under review or approved. Contact Admin for changes.")
     if not row: row=models.BusinessVerification(owner_user_id=user.id,business_name=name,categories_json=json.dumps(categories),city=city,locality=locality,address=address,aadhaar_last4=last4,pan_number=pan,status="submitted");db.add(row)
     else:
         row.business_name=name;row.categories_json=json.dumps(categories);row.city=city;row.locality=locality;row.address=address;row.aadhaar_last4=last4;row.pan_number=pan;row.status="submitted";row.admin_notes=""
