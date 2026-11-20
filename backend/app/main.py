@@ -4,6 +4,9 @@ from fastapi import FastAPI, Depends, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
+from io import BytesIO
+from openpyxl import Workbook
+from fastapi.responses import StreamingResponse
 from .database import Base, engine, get_db, migrate_sqlite_schema
 from . import models, schemas
 
@@ -350,6 +353,28 @@ def customer_bookings(user: models.User = Depends(require_role("customer")), db:
 def admin_bookings(user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     return db.query(models.Booking).order_by(models.Booking.appointment_at.desc()).all()
 
+@app.get("/api/provider/me/bookings/export.xlsx")
+def provider_bookings_export(period:str=Query("all"),month:str=Query(""),day:str=Query(""),status:str=Query(""),service_id:int|None=Query(None),search:str=Query(""),user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    q=db.query(models.Booking).filter(models.Booking.provider_id==provider.id)
+    if period=="day" and day:q=q.filter(func.date(models.Booking.appointment_at)==day)
+    elif period=="month" and month:q=q.filter(func.strftime("%Y-%m",models.Booking.appointment_at)==month)
+    elif period=="year" and month:q=q.filter(func.strftime("%Y",models.Booking.appointment_at)==month[:4])
+    if status:q=q.filter(models.Booking.status==status)
+    if service_id:q=q.filter(models.Booking.service_id==service_id)
+    if search:
+        term=f"%{search.strip()}%";q=q.filter((models.Booking.customer_name.ilike(term))|(models.Booking.customer_phone.ilike(term))|(models.Booking.notes.ilike(term)))
+    bookings=q.order_by(models.Booking.appointment_at.asc()).all()
+    services={s.id:s for s in db.query(models.Service).filter(models.Service.provider_id==provider.id).all()}
+    wb=Workbook();ws=wb.active;ws.title="Bookings";ws.append(["Date","Client","Phone","Service","Price (INR)","Status","Appointment","Notes"])
+    for b in bookings:
+        s=services.get(b.service_id);ws.append([b.appointment_at.strftime("%Y-%m-%d"),b.customer_name,b.customer_phone,s.name if s else "",s.price_inr if s else 0,b.status,b.appointment_at.strftime("%Y-%m-%d %H:%M"),b.notes or ""])
+    for cell in ws[1]:cell.font=cell.font.copy(bold=True)
+    for col,width in enumerate([14,24,18,24,14,16,22,36],1):ws.column_dimensions[chr(64+col)].width=width
+    ws.freeze_panes="A2";ws.auto_filter.ref=ws.dimensions
+    out=BytesIO();wb.save(out);out.seek(0)
+    return StreamingResponse(out,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":"attachment; filename=LUSHORA_Business_Report.xlsx"})
 @app.get("/api/provider/me/bookings")
 def provider_bookings(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
