@@ -465,7 +465,7 @@ async def upload_verification_document(doc_type: str, file: UploadFile = File(..
 @app.get("/api/v2/admin/verifications")
 def admin_verification_list(status: str = "submitted", user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     rows=db.query(models.BusinessVerification).filter(models.BusinessVerification.status==status).order_by(models.BusinessVerification.submitted_at.asc()).all()
-    return [{"id":r.id,"owner_user_id":r.owner_user_id,"business_name":r.business_name,"categories":json.loads(r.categories_json),"city":r.city,"locality":r.locality,"address":r.address,"aadhaar_last4":r.aadhaar_last4,"pan_number":r.pan_number,"documents":{"aadhaar":bool(r.aadhaar_document_name),"pan":bool(r.pan_document_name),"business":bool(r.business_document_name)},"status":r.status,"admin_notes":r.admin_notes,"submitted_at":r.submitted_at} for r in rows]
+    return [{"id":r.id,"owner_user_id":r.owner_user_id,"owner_name":(u.full_name if (u:=db.query(models.User).filter(models.User.id==r.owner_user_id).first()) else ""),"owner_email":(u.email if u else ""),"owner_phone":(u.phone if u else ""),"business_name":r.business_name,"categories":json.loads(r.categories_json),"city":r.city,"locality":r.locality,"address":r.address,"aadhaar_last4":r.aadhaar_last4,"pan_number":r.pan_number,"documents":{"aadhaar":bool(r.aadhaar_document_name),"pan":bool(r.pan_document_name),"business":bool(r.business_document_name)},"status":r.status,"admin_notes":r.admin_notes,"submitted_at":r.submitted_at} for r in rows]
 
 @app.get("/api/v2/admin/verifications/{verification_id}/document/{doc_type}")
 def admin_get_verification_document(verification_id:int,doc_type:str,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
