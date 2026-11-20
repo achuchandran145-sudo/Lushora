@@ -1,7 +1,7 @@
 name: LUSHORA CI
 on:
   push:
-    branches: [main, chandran-work]
+    branches: [main, chandran-work, lushora-premium-v2]
   pull_request:
     branches: [main, chandran-work]
 jobs:

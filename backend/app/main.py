@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta
-import os, re, json, hmac, hashlib, base64
+import os, re, json, hmac, hashlib, base64, secrets
 from fastapi import FastAPI, Depends, HTTPException, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
+from io import BytesIO
+from openpyxl import Workbook
+from fastapi.responses import StreamingResponse
 from .database import Base, engine, get_db, migrate_sqlite_schema
 from . import models, schemas
 
@@ -79,6 +82,151 @@ def bootstrap_admin_from_environment():
         db.close()
 
 CATEGORIES = ["Makeup", "Salon", "Skin Clinic", "Nail Studio"]
+
+
+
+@app.post("/api/v2/admin/subscriptions",status_code=201)
+def create_subscription(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    provider_id=int(payload.get("provider_id",0));area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();tier=str(payload.get("tier","")).lower()
+    if tier not in {"premium","standard"}: raise HTTPException(400,"Tier must be premium or standard")
+    price=3000 if tier=="premium" else 1500
+    provider=db.query(models.Provider).filter(models.Provider.id==provider_id,models.Provider.approval_status=="approved",models.Provider.category==category).first()
+    area=db.query(models.MarketplaceArea).filter(models.MarketplaceArea.id==area_id,models.MarketplaceArea.is_active==True).first()
+    if not provider or not area: raise HTTPException(404,"Approved business or area not found")
+    sub=models.BusinessSubscription(provider_id=provider_id,area_id=area_id,category=category,tier=tier,monthly_price_inr=price,status="pending")
+    db.add(sub);db.commit();db.refresh(sub)
+    return {"id":sub.id,"tier":tier,"monthly_price_inr":price,"status":sub.status,"message":"Subscription created pending payment/activation"}
+
+@app.get("/api/v2/admin/subscriptions")
+def list_subscriptions(user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rows=db.query(models.BusinessSubscription,models.Provider,models.MarketplaceArea).join(models.Provider,models.Provider.id==models.BusinessSubscription.provider_id).join(models.MarketplaceArea,models.MarketplaceArea.id==models.BusinessSubscription.area_id).order_by(models.BusinessSubscription.created_at.desc()).all()
+    return [{"id":s.id,"business":p.name,"provider_id":p.id,"city":a.city,"locality":a.locality,"category":s.category,"tier":s.tier,"price":s.monthly_price_inr,"status":s.status,"starts_at":s.starts_at,"ends_at":s.ends_at} for s,p,a in rows]
+
+@app.patch("/api/v2/admin/subscriptions/{subscription_id}")
+def update_subscription(subscription_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    sub=db.query(models.BusinessSubscription).filter(models.BusinessSubscription.id==subscription_id).first()
+    if not sub: raise HTTPException(404,"Subscription not found")
+    status=str(payload.get("status","")).lower()
+    if status not in {"active","paused","expired","cancelled"}: raise HTTPException(400,"Unsupported subscription status")
+    sub.status=status
+    if status=="active" and not sub.starts_at: sub.starts_at=datetime.utcnow();sub.ends_at=datetime.utcnow()+timedelta(days=30)
+    db.commit();return {"id":sub.id,"status":sub.status,"starts_at":sub.starts_at,"ends_at":sub.ends_at}
+
+# LUSHORA v2: area-based marketplace and sequential customer-lead distribution.
+@app.post("/api/v2/admin/areas", status_code=201)
+def create_area(payload: dict, user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    city = str(payload.get("city", "")).strip(); locality = str(payload.get("locality", "")).strip()
+    if not city or not locality: raise HTTPException(400, "City and locality are required")
+    area = db.query(models.MarketplaceArea).filter(func.lower(models.MarketplaceArea.city)==city.lower(),func.lower(models.MarketplaceArea.locality)==locality.lower()).first()
+    if area: return {"id": area.id, "city": area.city, "locality": area.locality, "message": "Area already exists"}
+    area=models.MarketplaceArea(city=city,locality=locality);db.add(area);db.commit();db.refresh(area)
+    return {"id":area.id,"city":area.city,"locality":area.locality}
+
+@app.get("/api/v2/areas")
+def list_areas(db: Session = Depends(get_db)):
+    return db.query(models.MarketplaceArea).filter(models.MarketplaceArea.is_active==True).order_by(models.MarketplaceArea.city,models.MarketplaceArea.locality).all()
+
+@app.put("/api/v2/admin/rankings")
+def set_area_rankings(payload: dict, user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();items=payload.get("providers",[])
+    if not area_id or not category: raise HTTPException(400,"Area and category are required")
+    if len(items)>10: raise HTTPException(400,"Only Top 10 placements are allowed")
+    db.query(models.AreaRanking).filter(models.AreaRanking.area_id==area_id,models.AreaRanking.category==category).delete()
+    for i,item in enumerate(items,1):
+        provider_id=int(item.get("provider_id"));tier="premium" if i<=5 else "standard"
+        provider=db.query(models.Provider).filter(models.Provider.id==provider_id,models.Provider.approval_status=="approved",models.Provider.category==category).first()
+        if not provider: raise HTTPException(400,f"Provider {provider_id} is not an approved provider in this category")
+        db.add(models.AreaRanking(area_id=area_id,category=category,provider_id=provider_id,rank_position=i,subscription_tier=tier,is_active=True))
+    db.commit();return {"area_id":area_id,"category":category,"rankings_saved":len(items)}
+
+@app.get("/api/v2/admin/rankings")
+def get_area_rankings(area_id:int,category:str,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rows=db.query(models.AreaRanking,models.Provider).join(models.Provider,models.Provider.id==models.AreaRanking.provider_id).filter(models.AreaRanking.area_id==area_id,models.AreaRanking.category==category,models.AreaRanking.is_active==True).order_by(models.AreaRanking.rank_position).all()
+    return [{"rank":r.rank_position,"provider_id":p.id,"business":p.name,"tier":r.subscription_tier} for r,p in rows]
+
+@app.post("/api/v2/customer/leads",status_code=201)
+def create_customer_lead(payload:dict,user:models.User=Depends(require_role("customer")),db:Session=Depends(get_db)):
+    if payload.get("contact_consent") is not True: raise HTTPException(400,"Customer consent to share contact details is required")
+    area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();interest=str(payload.get("service_interest","")).strip()
+    if not area_id or not category: raise HTTPException(400,"Area and category are required")
+    area=db.query(models.MarketplaceArea).filter(models.MarketplaceArea.id==area_id,models.MarketplaceArea.is_active==True).first()
+    if not area: raise HTTPException(404,"Area not found")
+    if not user.phone: raise HTTPException(400,"Verified customer phone number is missing")
+    rankings=db.query(models.AreaRanking).filter(models.AreaRanking.area_id==area_id,models.AreaRanking.category==category,models.AreaRanking.is_active==True).order_by(models.AreaRanking.rank_position).all()
+    if not rankings: raise HTTPException(404,"No ranked businesses are available for this area and category")
+    lead=models.CustomerLead(customer_user_id=user.id,area_id=area_id,category=category,service_interest=interest,customer_phone=user.phone,contact_consent=True)
+    db.add(lead);db.flush();now=datetime.utcnow()
+    for ranking in rankings[:10]: db.add(models.LeadDelivery(lead_id=lead.id,provider_id=ranking.provider_id,rank_position=ranking.rank_position,scheduled_at=now+timedelta(minutes=3*(ranking.rank_position-1))))
+    db.commit();return {"lead_id":lead.id,"deliveries_scheduled":min(len(rankings),10),"first_delivery_at":now.isoformat(),"interval_minutes":3,"message":"Lead created. Sequential distribution is scheduled."}
+
+@app.get("/api/v2/provider/me/leads")
+def provider_leads(user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(403,"Business profile not found")
+    now=datetime.utcnow()
+    due=db.query(models.LeadDelivery).filter(models.LeadDelivery.provider_id==provider.id,models.LeadDelivery.status=="scheduled",models.LeadDelivery.scheduled_at<=now).all()
+    for delivery in due: delivery.status="sent";delivery.sent_at=now
+    db.commit()
+    rows=db.query(models.LeadDelivery,models.CustomerLead,models.MarketplaceArea).join(models.CustomerLead,models.CustomerLead.id==models.LeadDelivery.lead_id).join(models.MarketplaceArea,models.MarketplaceArea.id==models.CustomerLead.area_id).filter(models.LeadDelivery.provider_id==provider.id,models.LeadDelivery.status=="sent").order_by(models.LeadDelivery.sent_at.desc()).all()
+    return [{"lead_id":lead.id,"delivery_id":delivery.id,"rank":delivery.rank_position,"city":area.city,"locality":area.locality,"category":lead.category,"service_interest":lead.service_interest,"customer_phone":lead.customer_phone if lead.contact_consent else None,"sent_at":delivery.sent_at,"response_status":delivery.response_status} for delivery,lead,area in rows]
+
+
+# Customer phone OTP authentication (development OTP only until SMS gateway is configured)
+OTP_DEV_MODE = os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true"
+OTP_TTL_MINUTES = 5
+
+def _normalize_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone or "")
+    if digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    if len(digits) != 10:
+        raise HTTPException(400, "Enter a valid 10-digit Indian mobile number")
+    return "+91" + digits
+
+
+def _otp_digest(phone: str, otp: str) -> str:
+    return hashlib.sha256((phone + ":" + otp + ":" + os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret")).encode()).hexdigest()
+
+
+@app.post("/api/v2/customer/otp/request")
+def customer_otp_request(payload: dict, db: Session = Depends(get_db)):
+    phone = _normalize_phone(str(payload.get("phone", "")))
+    if not OTP_DEV_MODE:
+        raise HTTPException(503, "SMS OTP delivery is not configured yet. Configure an SMS provider before enabling production customer login.")
+    recent = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.created_at > datetime.utcnow() - timedelta(seconds=60)).first()
+    if recent:
+        raise HTTPException(429, "Please wait 60 seconds before requesting another OTP")
+    code = f"{secrets.randbelow(1000000):06d}"
+    db.add(models.OTPChallenge(phone=phone, code_hash=_otp_digest(phone, code), expires_at=datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)))
+    db.commit()
+    return {"message": "Development OTP generated. SMS delivery is not connected yet.", "development_otp": code if OTP_DEV_MODE else None, "expires_in_seconds": OTP_TTL_MINUTES * 60}
+
+
+@app.post("/api/v2/customer/otp/verify")
+def customer_otp_verify(payload: dict, db: Session = Depends(get_db)):
+    phone = _normalize_phone(str(payload.get("phone", "")))
+    otp = str(payload.get("otp", "")).strip()
+    if not re.fullmatch(r"\d{6}", otp):
+        raise HTTPException(400, "Enter the 6-digit OTP")
+    challenge = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.consumed == False).order_by(models.OTPChallenge.created_at.desc()).first()
+    if not challenge or challenge.expires_at < datetime.utcnow():
+        raise HTTPException(401, "OTP expired. Request a new code.")
+    if challenge.attempts >= 5:
+        challenge.consumed = True; db.commit()
+        raise HTTPException(429, "Too many attempts. Request a new OTP.")
+    challenge.attempts += 1
+    if not hmac.compare_digest(challenge.code_hash, _otp_digest(phone, otp)):
+        db.commit()
+        raise HTTPException(401, "Incorrect OTP")
+    challenge.consumed = True
+    user = db.query(models.User).filter(models.User.phone == phone, models.User.role == "customer").first()
+    if not user:
+        placeholder_email = phone.replace("+", "") + "@customer.lushora.local"
+        user = models.User(full_name="LUSHORA Customer", email=placeholder_email, phone=phone, password_hash=_password_hash(secrets.token_urlsafe(32)), role="customer", is_active=True)
+        db.add(user); db.flush()
+    db.commit(); db.refresh(user)
+    return {"access_token": _make_token(user.id), "token_type": "bearer", "user": user}
+
 
 
 @app.post("/api/auth/register", response_model=schemas.TokenOut, status_code=201)
@@ -205,6 +353,28 @@ def customer_bookings(user: models.User = Depends(require_role("customer")), db:
 def admin_bookings(user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     return db.query(models.Booking).order_by(models.Booking.appointment_at.desc()).all()
 
+@app.get("/api/provider/me/bookings/export.xlsx")
+def provider_bookings_export(period:str=Query("all"),month:str=Query(""),day:str=Query(""),status:str=Query(""),service_id:int|None=Query(None),search:str=Query(""),user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    q=db.query(models.Booking).filter(models.Booking.provider_id==provider.id)
+    if period=="day" and day:q=q.filter(func.date(models.Booking.appointment_at)==day)
+    elif period=="month" and month:q=q.filter(func.strftime("%Y-%m",models.Booking.appointment_at)==month)
+    elif period=="year" and month:q=q.filter(func.strftime("%Y",models.Booking.appointment_at)==month[:4])
+    if status:q=q.filter(models.Booking.status==status)
+    if service_id:q=q.filter(models.Booking.service_id==service_id)
+    if search:
+        term=f"%{search.strip()}%";q=q.filter((models.Booking.customer_name.ilike(term))|(models.Booking.customer_phone.ilike(term))|(models.Booking.notes.ilike(term)))
+    bookings=q.order_by(models.Booking.appointment_at.asc()).all()
+    services={s.id:s for s in db.query(models.Service).filter(models.Service.provider_id==provider.id).all()}
+    wb=Workbook();ws=wb.active;ws.title="Bookings";ws.append(["Date","Client","Phone","Service","Price (INR)","Status","Appointment","Notes"])
+    for b in bookings:
+        s=services.get(b.service_id);ws.append([b.appointment_at.strftime("%Y-%m-%d"),b.customer_name,b.customer_phone,s.name if s else "",s.price_inr if s else 0,b.status,b.appointment_at.strftime("%Y-%m-%d %H:%M"),b.notes or ""])
+    for cell in ws[1]:cell.font=cell.font.copy(bold=True)
+    for col,width in enumerate([14,24,18,24,14,16,22,36],1):ws.column_dimensions[chr(64+col)].width=width
+    ws.freeze_panes="A2";ws.auto_filter.ref=ws.dimensions
+    out=BytesIO();wb.save(out);out.seek(0)
+    return StreamingResponse(out,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":"attachment; filename=LUSHORA_Business_Report.xlsx"})
 @app.get("/api/provider/me/bookings")
 def provider_bookings(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
@@ -252,6 +422,44 @@ def provider_delete_service(service_id: int, user: models.User = Depends(require
     db.delete(service); db.commit()
     return {"message": "Service deleted"}
 
+
+@app.get("/api/admin/users/report")
+def admin_users_report(start_date:str=Query(""),end_date:str=Query(""),role:str=Query(""),search:str=Query(""),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    q=db.query(models.User)
+    if role in {"customer","provider","admin"}: q=q.filter(models.User.role==role)
+    if start_date: q=q.filter(func.date(models.User.created_at)>=start_date)
+    if end_date: q=q.filter(func.date(models.User.created_at)<=end_date)
+    if search:
+        term=f"%{search.strip()}%"
+        q=q.filter((models.User.full_name.ilike(term))|(models.User.email.ilike(term))|(models.User.phone.ilike(term)))
+    users=q.order_by(models.User.created_at.desc()).all()
+    provider_users=db.query(models.User).filter(models.User.role=="provider")
+    customer_users=db.query(models.User).filter(models.User.role=="customer")
+    if start_date:
+        provider_users=provider_users.filter(func.date(models.User.created_at)>=start_date)
+        customer_users=customer_users.filter(func.date(models.User.created_at)>=start_date)
+    if end_date:
+        provider_users=provider_users.filter(func.date(models.User.created_at)<=end_date)
+        customer_users=customer_users.filter(func.date(models.User.created_at)<=end_date)
+    return {"total_customers":customer_users.count(),"total_business_accounts":provider_users.count(),"new_customers":customer_users.count(),"new_business_accounts":provider_users.count(),"users":[{"id":u.id,"name":u.full_name,"email":u.email,"phone":u.phone,"role":u.role,"active":u.is_active,"created_at":u.created_at.isoformat() if u.created_at else None,"address":None} for u in users]}
+
+@app.get("/api/admin/users/export.xlsx")
+def admin_users_export(start_date:str=Query(""),end_date:str=Query(""),role:str=Query(""),search:str=Query(""),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    q=db.query(models.User)
+    if role in {"customer","provider","admin"}:q=q.filter(models.User.role==role)
+    if start_date:q=q.filter(func.date(models.User.created_at)>=start_date)
+    if end_date:q=q.filter(func.date(models.User.created_at)<=end_date)
+    if search:
+        term=f"%{search.strip()}%";q=q.filter((models.User.full_name.ilike(term))|(models.User.email.ilike(term))|(models.User.phone.ilike(term)))
+    records=q.order_by(models.User.created_at.desc()).all()
+    wb=Workbook();ws=wb.active;ws.title="User Accounts";ws.append(["User ID","Name","Phone","Email","Account Type","Active","Registered At","Address"])
+    for u in records:ws.append([u.id,u.full_name,u.phone,u.email,u.role,u.is_active,u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "", "Not collected in current profile schema"])
+    for c in ws[1]:c.font=c.font.copy(bold=True)
+    for col,width in enumerate([12,24,18,32,18,12,24,40],1):ws.column_dimensions[chr(64+col)].width=width
+    ws.freeze_panes="A2";ws.auto_filter.ref=ws.dimensions
+    out=BytesIO();wb.save(out);out.seek(0)
+    return StreamingResponse(out,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":"attachment; filename=LUSHORA_Admin_User_Report.xlsx"})
+
 @app.get("/api/admin/summary")
 def admin_summary(db: Session = Depends(get_db), user: models.User = Depends(require_role("admin"))):
     return {"providers": db.query(models.Provider).count(), "services": db.query(models.Service).count(),
@@ -273,3 +481,84 @@ def seed_demo(db: Session = Depends(get_db)):
         for sn,price,duration in services: db.add(models.Service(provider_id=p.id,name=sn,price_inr=price,duration_minutes=duration))
     db.commit()
     return {"message":"Demo providers created", "providers":len(records)}
+
+# Business verification and subscription policy MVP
+from pathlib import Path
+from fastapi import UploadFile, File
+from fastapi.responses import FileResponse
+import uuid
+
+VERIFICATION_UPLOAD_DIR = Path(os.getenv("LUSHORA_VERIFICATION_UPLOAD_DIR", "./private_verification_uploads")).resolve()
+VERIFICATION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_DOC_TYPES = {"application/pdf", "image/jpeg", "image/png"}
+MAX_DOC_BYTES = 8 * 1024 * 1024
+
+@app.post("/api/v2/provider/verification/submit", status_code=201)
+def submit_business_verification(payload: dict, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    name=str(payload.get("business_name","")).strip(); city=str(payload.get("city","")).strip(); locality=str(payload.get("locality","")).strip(); address=str(payload.get("address","")).strip()
+    categories=payload.get("categories",[])
+    if not name or not city or not locality or not address: raise HTTPException(400,"Business name, city, locality and address are required")
+    if not isinstance(categories,list) or not categories or any(c not in CATEGORIES for c in categories): raise HTTPException(400,"Select one or more valid business categories")
+    last4=str(payload.get("aadhaar_last4","")).strip()
+    pan=str(payload.get("pan_number","")).strip().upper()
+    if last4 and not re.fullmatch(r"\d{4}",last4): raise HTTPException(400,"Aadhaar last 4 digits must be numeric")
+    if pan and not re.fullmatch(r"[A-Z]{5}\d{4}[A-Z]",pan): raise HTTPException(400,"Enter a valid PAN format")
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
+    if row and row.status in {"under_review","approved"}: raise HTTPException(409,"Your verification is already under review or approved. Contact Admin for changes.")
+    if not row: row=models.BusinessVerification(owner_user_id=user.id,business_name=name,categories_json=json.dumps(categories),city=city,locality=locality,address=address,aadhaar_last4=last4,pan_number=pan,status="submitted");db.add(row)
+    else:
+        row.business_name=name;row.categories_json=json.dumps(categories);row.city=city;row.locality=locality;row.address=address;row.aadhaar_last4=last4;row.pan_number=pan;row.status="submitted";row.admin_notes=""
+    db.commit();db.refresh(row)
+    return {"id":row.id,"status":row.status,"message":"Verification submitted. Your account remains pending admin approval."}
+
+@app.post("/api/v2/provider/verification/document/{doc_type}")
+async def upload_verification_document(doc_type: str, file: UploadFile = File(...), user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    if doc_type not in {"aadhaar","pan","business"}: raise HTTPException(400,"Unsupported document type")
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
+    if not row: raise HTTPException(404,"Submit verification details before uploading documents")
+    if file.content_type not in ALLOWED_DOC_TYPES: raise HTTPException(400,"Only PDF, JPG or PNG files are accepted")
+    data=await file.read(MAX_DOC_BYTES+1)
+    if len(data)>MAX_DOC_BYTES: raise HTTPException(413,"Document must be 8 MB or smaller")
+    suffix={"application/pdf":".pdf","image/jpeg":".jpg","image/png":".png"}[file.content_type]
+    safe_name=f"{user.id}_{doc_type}_{uuid.uuid4().hex}{suffix}"
+    (VERIFICATION_UPLOAD_DIR/safe_name).write_bytes(data)
+    setattr(row,doc_type+"_document_name",safe_name);db.commit()
+    return {"uploaded":True,"document_type":doc_type,"message":"Document uploaded to private local storage"}
+
+@app.get("/api/v2/admin/verifications")
+def admin_verification_list(status: str = "submitted", user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    rows=db.query(models.BusinessVerification).filter(models.BusinessVerification.status==status).order_by(models.BusinessVerification.submitted_at.asc()).all()
+    return [{"id":r.id,"owner_user_id":r.owner_user_id,"owner_name":(u.full_name if (u:=db.query(models.User).filter(models.User.id==r.owner_user_id).first()) else ""),"owner_email":(u.email if u else ""),"owner_phone":(u.phone if u else ""),"business_name":r.business_name,"categories":json.loads(r.categories_json),"city":r.city,"locality":r.locality,"address":r.address,"aadhaar_last4":r.aadhaar_last4,"pan_number":r.pan_number,"documents":{"aadhaar":bool(r.aadhaar_document_name),"pan":bool(r.pan_document_name),"business":bool(r.business_document_name)},"status":r.status,"admin_notes":r.admin_notes,"submitted_at":r.submitted_at} for r in rows]
+
+@app.get("/api/v2/admin/verifications/{verification_id}/document/{doc_type}")
+def admin_get_verification_document(verification_id:int,doc_type:str,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    if doc_type not in {"aadhaar","pan","business"}: raise HTTPException(400,"Unsupported document type")
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
+    if not row: raise HTTPException(404,"Verification not found")
+    filename=getattr(row,doc_type+"_document_name","")
+    if not filename or not (VERIFICATION_UPLOAD_DIR/filename).exists(): raise HTTPException(404,"Document not uploaded")
+    return FileResponse(VERIFICATION_UPLOAD_DIR/filename,filename=doc_type+"_verification_document",media_type="application/octet-stream")
+
+@app.patch("/api/v2/admin/verifications/{verification_id}")
+def admin_review_verification(verification_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
+    if not row: raise HTTPException(404,"Verification not found")
+    action=str(payload.get("status","")).lower();notes=str(payload.get("admin_notes","")).strip()
+    if action not in {"approved","rejected","under_review"}: raise HTTPException(400,"Status must be approved, rejected or under_review")
+    if action=="approved" and (not row.aadhaar_document_name or not row.pan_document_name or not row.business_document_name): raise HTTPException(400,"All three verification documents must be uploaded before approval")
+    row.status=action;row.admin_notes=notes;row.reviewed_at=datetime.utcnow() if action in {"approved","rejected"} else None
+    if action=="approved":
+        userrow=db.query(models.User).filter(models.User.id==row.owner_user_id).first()
+        if userrow: userrow.is_active=True
+        cats=json.loads(row.categories_json)
+        # Create provider listing records per selected category; MVP uses category-specific provider records.
+        for cat in cats:
+            existing=db.query(models.Provider).filter(models.Provider.owner_user_id==row.owner_user_id,models.Provider.category==cat).first()
+            if not existing: db.add(models.Provider(owner_user_id=row.owner_user_id,approval_status="approved",name=row.business_name,category=cat,city=row.city,locality=row.locality,description=row.address,verified=True))
+    db.commit();return {"id":row.id,"status":row.status,"message":"Verification review updated"}
+
+@app.get("/api/v2/provider/verification/me")
+def provider_verification_me(user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
+    if not row: return {"status":"not_submitted"}
+    return {"id":row.id,"business_name":row.business_name,"categories":json.loads(row.categories_json),"city":row.city,"locality":row.locality,"address":row.address,"documents":{"aadhaar":bool(row.aadhaar_document_name),"pan":bool(row.pan_document_name),"business":bool(row.business_document_name)},"status":row.status,"admin_notes":row.admin_notes}
