@@ -217,7 +217,7 @@ function App() {
       <section className="business-banner" id="business"><div><p className="eyebrow light">FOR THE PEOPLE BEHIND THE BEAUTY</p><h2>Your craft deserves<br/><em>to be discovered.</em></h2><p>Bring your business to a community looking for their next favourite beauty experience.</p></div><button className="light-button" onClick={() => { window.location.href = '/business/login'; }}>List your business <span>↗</span></button></section>
     </main>
 
-    <footer className="site-footer"><div className="footer-top"><a className="wordmark footer-wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span></a><p>Discover beauty. Find your people. Make time for you.</p><div className="footer-links"><a href="#discover">Discover</a><a href="#journal">Journal</a><a href="#business">For businesses</a><a href="/admin/login">Admin Login</a></div></div><div className="footer-bottom"><span>© 2026 LUSHORA. All rights reserved.</span><span>BEAUTY · WELLNESS · SKIN CARE</span></div></footer>
+    <footer className="site-footer"><div className="footer-top"><a className="wordmark footer-wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span></a><p>Discover beauty. Find your people. Make time for you.</p><div className="footer-links"><a href="#discover">Discover</a><a href="#journal">Journal</a><a href="#business">For businesses</a>{account?.user?.role==='customer'&&<a href="/customer/edit-profile">My Profile</a>}<a href="/admin/login">Admin Login</a></div></div><div className="footer-bottom"><span>© 2026 LUSHORA. All rights reserved.</span><span>BEAUTY · WELLNESS · SKIN CARE</span></div></footer>
 
     
     
