@@ -14,9 +14,12 @@ Initial categories: **Makeup, Salon, Skin Clinic, Nail Studio**. Initial target 
 ## Features implemented
 
 ### Marketplace/customer foundation
-- Responsive premium LUSHORA homepage and category discovery.
+- Responsive premium LUSHORA homepage and multi-category discovery (Makeup, Salon, Skin Clinic, Nail Studio).
+- Homepage footer Admin Login link; Admin entry is removed from Customer Login.
 - Provider discovery by category/city/locality.
 - API-level filters for verified and price.
+- Customer phone OTP login; after verification, first-time customers complete first name, last name, street address, city and locality profile setup.
+- Customer profile/address storage and profile API; city/locality selection supports initial launch cities.
 - Customer registration/login APIs, profile and booking-history endpoints.
 - Guest booking request flow with provider/service validation and appointment-overlap checks.
 
@@ -112,7 +115,7 @@ git pull origin lushora-premium-v2
 - [ ] Test Admin customer/business report, filters and Excel export locally.
 - [ ] Seed realistic sample users, providers and bookings for testing.
 - [ ] Fix bugs identified during testing.
-- [ ] Add customer address collection/profile editing and show addresses in Admin/report (with privacy/security controls).
+- [ ] Expand and maintain city/locality database; allow customer profile editing and show address in Admin/report (with privacy/security controls).
 
 ### Planned product work
 - [ ] Customer OTP/mobile verification.
