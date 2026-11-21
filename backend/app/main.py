@@ -11,6 +11,12 @@ from .database import Base, engine, get_db, migrate_sqlite_schema
 from . import models, schemas
 
 Base.metadata.create_all(bind=engine)
+# Add availability settings to existing SQLite provider tables.
+try:
+    from sqlalchemy import inspect as _inspect
+    if engine.dialect.name == 'sqlite' and 'availability_config' not in [c['name'] for c in _inspect(engine).get_columns('providers')]:
+        with engine.begin() as _conn: _conn.exec_driver_sql("ALTER TABLE providers ADD COLUMN availability_config TEXT DEFAULT '{}'")
+except Exception: pass
 app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and wellness discovery and booking MVP")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -399,6 +405,61 @@ def provider_bookings_export(period:str=Query("all"),month:str=Query(""),day:str
     ws.freeze_panes="A2";ws.auto_filter.ref=ws.dimensions
     out=BytesIO();wb.save(out);out.seek(0)
     return StreamingResponse(out,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":"attachment; filename=LUSHORA_Business_Report.xlsx"})
+@app.get("/api/provider/me/availability")
+def provider_availability(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    try: cfg=json.loads(provider.availability_config or "{}")
+    except Exception: cfg={}
+    return cfg or {"working_days":[0,1,2,3,4,5],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
+
+@app.put("/api/provider/me/availability")
+def update_provider_availability(payload: dict, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    days=payload.get("working_days",[])
+    start=str(payload.get("start_time","09:00"));end=str(payload.get("end_time","18:00"))
+    if not isinstance(days,list) or any(not isinstance(d,int) or d<0 or d>6 for d in days): raise HTTPException(400,"Select valid working days")
+    try:
+        sh,sm=map(int,start.split(":"));eh,em=map(int,end.split(":"))
+        if sh*60+sm>=eh*60+em: raise ValueError()
+    except Exception: raise HTTPException(400,"End time must be later than start time")
+    bs=str(payload.get("break_start",""));be=str(payload.get("break_end",""))
+    if bool(bs)!=bool(be): raise HTTPException(400,"Enter both break start and end times")
+    if bs:
+        try:
+            bsm,bss=map(int,bs.split(":"));bem,bes=map(int,be.split(":"))
+            if not (sh*60+sm<=bsm*60+bss<bem*60+bes<=eh*60+em): raise ValueError()
+        except Exception: raise HTTPException(400,"Break must fall within working hours")
+    cfg={"working_days":sorted(set(days)),"start_time":start,"end_time":end,"break_start":bs,"break_end":be,"closed_dates":payload.get("closed_dates",[])}
+    provider.availability_config=json.dumps(cfg);db.commit()
+    return cfg
+
+@app.get("/api/providers/{provider_id}/available-slots")
+def available_slots(provider_id:int,date:str=Query(...),service_id:int=Query(...),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.id==provider_id,models.Provider.approval_status=="approved").first()
+    service=db.query(models.Service).filter(models.Service.id==service_id,models.Service.provider_id==provider_id).first()
+    if not provider or not service: raise HTTPException(404,"Provider or service not found")
+    try: day=datetime.strptime(date,"%Y-%m-%d").date()
+    except Exception: raise HTTPException(400,"Invalid date")
+    try: cfg=json.loads(provider.availability_config or "{}")
+    except Exception: cfg={}
+    cfg=cfg or {"working_days":[0,1,2,3,4,5],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
+    if day.weekday() not in cfg.get("working_days",[]) or date in cfg.get("closed_dates",[]): return {"slots":[],"duration_minutes":service.duration_minutes}
+    start=datetime.combine(day,datetime.strptime(cfg["start_time"],"%H:%M").time());end=datetime.combine(day,datetime.strptime(cfg["end_time"],"%H:%M").time())
+    bs=cfg.get("break_start");be=cfg.get("break_end")
+    break_s=datetime.combine(day,datetime.strptime(bs,"%H:%M").time()) if bs and be else None
+    break_e=datetime.combine(day,datetime.strptime(be,"%H:%M").time()) if bs and be else None
+    active=db.query(models.Booking,models.Service).join(models.Service,models.Booking.service_id==models.Service.id).filter(models.Booking.provider_id==provider_id,models.Booking.status.in_(["requested","confirmed"]),func.date(models.Booking.appointment_at)==date).all()
+    slots=[];step=30;now=datetime.now()
+    t=start
+    while t+timedelta(minutes=service.duration_minutes)<=end:
+        finish=t+timedelta(minutes=service.duration_minutes)
+        if t>now and not (break_s and t<break_e and finish>break_s) and not any(t<eb+timedelta(minutes=es.duration_minutes) and finish>eb for b,es in active for eb in [b.appointment_at]):
+            slots.append(t.strftime("%H:%M"))
+        t+=timedelta(minutes=step)
+    return {"slots":slots,"duration_minutes":service.duration_minutes}
+
 @app.get("/api/provider/me/bookings")
 def provider_bookings(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
