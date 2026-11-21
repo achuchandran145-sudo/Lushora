@@ -20,7 +20,7 @@ const editorial = [
 
 function App() {
   const [providers, setProviders] = useState([]);
-  const [category, setCategory] = useState('All');
+  const [categoriesSelected, setCategoriesSelected] = useState([]);
   const [city, setCity] = useState('All cities');
   const [search, setSearch] = useState('');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -44,7 +44,7 @@ function App() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (category !== 'All') params.set('category', category);
+      if (categoriesSelected.length) params.set('categories', categoriesSelected.join(','));
       if (city !== 'All cities') params.set('city', city);
       if (verifiedOnly) params.set('verified', 'true');
       const [p, s] = await Promise.all([fetch(`${API}/providers?${params}`), fetch(`${API}/admin/summary`)]);
@@ -55,7 +55,7 @@ function App() {
       setNotice('The LUSHORA API is not connected. Start the backend using RUN_LUSHORA.bat.');
     } finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, [category, city, verifiedOnly]);
+  useEffect(() => { load(); }, [categoriesSelected, city, verifiedOnly]);
 
   async function seed() {
     try {
@@ -194,7 +194,7 @@ function App() {
 
       <section className="category-section" id="discover">
         <div className="section-title"><div><p className="eyebrow">EXPLORE BY EXPERIENCE</p><h2>Consider this your beauty edit.</h2></div><p className="section-note">Thoughtfully selected services<br/>for every version of you.</p></div>
-        <div className="category-list">{categories.map(c => <button key={c.key} className={`category-chip ${category === c.key ? 'active' : ''}`} onClick={() => { setCategory(c.key); setShowAll(false); }}><span>{c.icon}</span>{c.name}</button>)}</div>
+        <div className="category-list multi-category-list">{categories.filter(c=>c.key!=='All').map(c => <button type="button" key={c.key} className={`category-chip ${categoriesSelected.includes(c.key) ? 'active' : ''}`} onClick={() => { setCategoriesSelected(prev=>prev.includes(c.key)?prev.filter(x=>x!==c.key):[...prev,c.key]); setShowAll(false); }}><span>{categoriesSelected.includes(c.key)?'✓':c.icon}</span>{c.name}</button>)}</div><p className="category-selection-hint">Select one or more categories. Leave all unselected to explore everything.</p>
       </section>
 
       <section className="provider-section">
@@ -217,7 +217,7 @@ function App() {
       <section className="business-banner" id="business"><div><p className="eyebrow light">FOR THE PEOPLE BEHIND THE BEAUTY</p><h2>Your craft deserves<br/><em>to be discovered.</em></h2><p>Bring your business to a community looking for their next favourite beauty experience.</p></div><button className="light-button" onClick={() => { window.location.href = '/business/login'; }}>List your business <span>↗</span></button></section>
     </main>
 
-    <footer className="site-footer"><div className="footer-top"><a className="wordmark footer-wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span></a><p>Discover beauty. Find your people. Make time for you.</p><div className="footer-links"><a href="#discover">Discover</a><a href="#journal">Journal</a><a href="#business">For businesses</a></div></div><div className="footer-bottom"><span>© 2026 LUSHORA. All rights reserved.</span><span>BEAUTY · WELLNESS · SKIN CARE</span></div></footer>
+    <footer className="site-footer"><div className="footer-top"><a className="wordmark footer-wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span></a><p>Discover beauty. Find your people. Make time for you.</p><div className="footer-links"><a href="#discover">Discover</a><a href="#journal">Journal</a><a href="#business">For businesses</a><a href="/admin/login">Admin Login</a></div></div><div className="footer-bottom"><span>© 2026 LUSHORA. All rights reserved.</span><span>BEAUTY · WELLNESS · SKIN CARE</span></div></footer>
 
     
     
