@@ -83,6 +83,28 @@ def bootstrap_admin_from_environment():
 
 CATEGORIES = ["Makeup", "Salon", "Skin Clinic", "Nail Studio"]
 
+@app.get("/api/v2/customer/profile")
+def customer_profile(user: models.User = Depends(require_role("customer"))):
+    return {"first_name": user.first_name, "last_name": user.last_name, "street_address": user.street_address, "city": user.city, "locality": user.locality, "phone": user.phone, "profile_complete": bool(user.first_name and user.last_name and user.street_address and user.city and user.locality)}
+
+@app.patch("/api/v2/customer/profile")
+def update_customer_profile(payload: dict, user: models.User = Depends(require_role("customer")), db: Session = Depends(get_db)):
+    first = str(payload.get("first_name", "")).strip()
+    last = str(payload.get("last_name", "")).strip()
+    street = str(payload.get("street_address", "")).strip()
+    city = str(payload.get("city", "")).strip()
+    locality = str(payload.get("locality", "")).strip()
+    if not all([first, last, street, city, locality]):
+        raise HTTPException(400, "Please complete all profile and address fields")
+    if city not in {"Chennai", "Coimbatore", "Tiruvannamalai"}:
+        raise HTTPException(400, "Select a supported city")
+    user.first_name, user.last_name = first, last
+    user.full_name = f"{first} {last}"
+    user.street_address, user.city, user.locality = street, city, locality
+    db.commit(); db.refresh(user)
+    return {"first_name": first, "last_name": last, "street_address": street, "city": city, "locality": locality, "phone": user.phone, "profile_complete": True, "message": "Profile saved"}
+
+
 
 
 @app.post("/api/v2/admin/subscriptions",status_code=201)
@@ -267,11 +289,13 @@ def categories():
     return [{"name": c} for c in CATEGORIES]
 
 @app.get("/api/providers", response_model=list[schemas.ProviderOut])
-def list_providers(category: str | None = None, city: str | None = None, locality: str | None = None,
+def list_providers(category: str | None = None, categories: str | None = None, city: str | None = None, locality: str | None = None,
                    min_price: int | None = Query(default=None, ge=0), max_price: int | None = Query(default=None, ge=0),
                    verified: bool | None = None, db: Session = Depends(get_db)):
     q = db.query(models.Provider).options(joinedload(models.Provider.services)).filter(models.Provider.approval_status == "approved")
-    if category: q = q.filter(func.lower(models.Provider.category) == category.lower())
+    selected_categories = [x.strip().lower() for x in (categories or "").split(",") if x.strip()]
+    if category: selected_categories.append(category.strip().lower())
+    if selected_categories: q = q.filter(func.lower(models.Provider.category).in_(list(set(selected_categories))))
     if city: q = q.filter(func.lower(models.Provider.city) == city.lower())
     if locality: q = q.filter(func.lower(models.Provider.locality).contains(locality.lower()))
     if verified is not None: q = q.filter(models.Provider.verified == verified)
