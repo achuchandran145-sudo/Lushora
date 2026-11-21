@@ -151,3 +151,23 @@ This is a development MVP, **not production-ready**. Do not use real sensitive i
 - SMS placeholder: `SMS_PROVIDER_API_KEY`, `SMS_SENDER_ID`
 
 This framework tracks channel readiness and creates delivery-log records. It does not yet dispatch external messages. Provider adapters, worker, retries, and delivery receipts remain to be implemented. Credentials are not stored in Git.
+
+
+## External notification delivery (backend framework)
+
+The notification worker is a separate process and must run alongside the API:
+
+```powershell
+cd backend
+.venv\Scripts\activate
+python -m app.notification_worker
+```
+
+Configure channel credentials in the environment (never commit secrets):
+
+- **Push (Firebase Admin):** `FCM_SERVICE_ACCOUNT_JSON` — JSON content of a Firebase service account. Client-side Firebase token generation and registration UI still need to be connected.
+- **WhatsApp Cloud API:** `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` — requires Meta setup and approved template handling for applicable outbound messages.
+- **SMS (Twilio):** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SMS_FROM` — configure an approved sender/number with Twilio.
+- Optional worker settings: `NOTIFICATION_WORKER_POLL_SECONDS` (default 10), `NOTIFICATION_MAX_ATTEMPTS` (default 5).
+
+The worker processes queued deliveries, logs attempts and provider IDs, and retries failures with exponential backoff. It does not run automatically inside the FastAPI server. Push delivery is not end-to-end until the frontend registers device tokens. WhatsApp template compliance, channel opt-in/consent UX, provider account setup and production testing are still required before launch.
