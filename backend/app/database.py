@@ -34,6 +34,11 @@ def migrate_sqlite_schema():
         for col, sql in [('first_name', 'ALTER TABLE users ADD COLUMN first_name VARCHAR(80) NOT NULL DEFAULT \'\''), ('last_name', 'ALTER TABLE users ADD COLUMN last_name VARCHAR(80) NOT NULL DEFAULT \'\''), ('street_address', 'ALTER TABLE users ADD COLUMN street_address TEXT NOT NULL DEFAULT \'\''), ('city', 'ALTER TABLE users ADD COLUMN city VARCHAR(80) NOT NULL DEFAULT \'\''), ('locality', 'ALTER TABLE users ADD COLUMN locality VARCHAR(120) NOT NULL DEFAULT \'\'')]:
             if col not in user_cols:
                 conn.execute(text(sql))
+
+        delivery_cols = {c['name'] for c in inspector.get_columns('notification_deliveries')} if 'notification_deliveries' in inspector.get_table_names() else set()
+        if 'next_attempt_at' not in delivery_cols:
+            conn.execute(text('ALTER TABLE notification_deliveries ADD COLUMN next_attempt_at DATETIME'))
+        device_cols = {c['name'] for c in inspector.get_columns('notification_devices')} if 'notification_devices' in inspector.get_table_names() else set()
         booking_cols = {c['name'] for c in inspector.get_columns('bookings')}
         if 'customer_user_id' not in booking_cols:
             conn.execute(text('ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER'))
