@@ -317,7 +317,37 @@ def get_provider(provider_id: int, db: Session = Depends(get_db)):
     return provider
 
 def _create_notification(db:Session,user_id:int,title:str,message:str,notification_type:str="info",booking_id:int|None=None):
-    db.add(models.Notification(recipient_user_id=user_id,title=title,message=message,notification_type=notification_type,booking_id=booking_id))
+    notification=models.Notification(recipient_user_id=user_id,title=title,message=message,notification_type=notification_type,booking_id=booking_id)
+    db.add(notification)
+    db.flush()
+    preference=db.query(models.NotificationPreference).filter(models.NotificationPreference.user_id==user_id).first()
+    from .notification_service import create_delivery_records
+    create_delivery_records(db,notification,preference)
+
+
+@app.get("/api/me/notification-preferences")
+def get_notification_preferences(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    pref=db.query(models.NotificationPreference).filter(models.NotificationPreference.user_id==user.id).first()
+    if not pref: pref=models.NotificationPreference(user_id=user.id);db.add(pref);db.commit();db.refresh(pref)
+    return {"in_app_enabled":pref.in_app_enabled,"push_enabled":pref.push_enabled,"whatsapp_enabled":pref.whatsapp_enabled,"sms_enabled":pref.sms_enabled}
+@app.put("/api/me/notification-preferences")
+def update_notification_preferences(payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    pref=db.query(models.NotificationPreference).filter(models.NotificationPreference.user_id==user.id).first()
+    if not pref: pref=models.NotificationPreference(user_id=user.id);db.add(pref)
+    for field in ("in_app_enabled","push_enabled","whatsapp_enabled","sms_enabled"):
+        if field in payload:
+            if not isinstance(payload[field],bool): raise HTTPException(400,f"{field} must be true or false")
+            setattr(pref,field,payload[field])
+    db.commit();db.refresh(pref)
+    return {"in_app_enabled":pref.in_app_enabled,"push_enabled":pref.push_enabled,"whatsapp_enabled":pref.whatsapp_enabled,"sms_enabled":pref.sms_enabled}
+@app.get("/api/admin/notification-channels")
+def admin_notification_channels(user:models.User=Depends(require_role("admin"))):
+    from .notification_service import channel_status
+    return channel_status()
+@app.get("/api/admin/notification-deliveries")
+def admin_notification_deliveries(limit:int=Query(100,ge=1,le=500),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rows=db.query(models.NotificationDelivery).order_by(models.NotificationDelivery.created_at.desc()).limit(limit).all()
+    return [{"id":r.id,"notification_id":r.notification_id,"user_id":r.user_id,"channel":r.channel,"status":r.status,"attempts":r.attempts,"provider_message_id":r.provider_message_id,"last_error":r.last_error,"created_at":r.created_at,"updated_at":r.updated_at} for r in rows]
 
 @app.get("/api/me/notifications")
 def my_notifications(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
