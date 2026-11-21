@@ -30,6 +30,10 @@ def migrate_sqlite_schema():
             conn.execute(text('ALTER TABLE providers ADD COLUMN owner_user_id INTEGER'))
         if 'approval_status' not in provider_cols:
             conn.execute(text("ALTER TABLE providers ADD COLUMN approval_status VARCHAR(20) NOT NULL DEFAULT 'approved'"))
+        user_cols = {c['name'] for c in inspector.get_columns('users')}
+        for col, sql in [('first_name', 'ALTER TABLE users ADD COLUMN first_name VARCHAR(80) NOT NULL DEFAULT \'\''), ('last_name', 'ALTER TABLE users ADD COLUMN last_name VARCHAR(80) NOT NULL DEFAULT \'\''), ('street_address', 'ALTER TABLE users ADD COLUMN street_address TEXT NOT NULL DEFAULT \'\''), ('city', 'ALTER TABLE users ADD COLUMN city VARCHAR(80) NOT NULL DEFAULT \'\''), ('locality', 'ALTER TABLE users ADD COLUMN locality VARCHAR(120) NOT NULL DEFAULT \'\'')]:
+            if col not in user_cols:
+                conn.execute(text(sql))
         booking_cols = {c['name'] for c in inspector.get_columns('bookings')}
         if 'customer_user_id' not in booking_cols:
             conn.execute(text('ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER'))
