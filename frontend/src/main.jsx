@@ -194,7 +194,7 @@ function App() {
 
       <section className="category-section" id="discover">
         <div className="section-title"><div><p className="eyebrow">EXPLORE BY EXPERIENCE</p><h2>Consider this your beauty edit.</h2></div><p className="section-note">Thoughtfully selected services<br/>for every version of you.</p></div>
-        <div className="category-list multi-category-list">{categories.filter(c=>c.key!=='All').map(c => <button type="button" key={c.key} className={`category-chip ${categoriesSelected.includes(c.key) ? 'active' : ''}`} onClick={() => { setCategoriesSelected(prev=>prev.includes(c.key)?prev.filter(x=>x!==c.key):[...prev,c.key]); setShowAll(false); }}><span>{categoriesSelected.includes(c.key)?'✓':c.icon}</span>{c.name}</button>)}</div><p className="category-selection-hint">Select one or more categories. Leave all unselected to explore everything.</p>
+        <div className="category-list multi-category-list">{categories.filter(c=>c.key!=='All').map(c => <button type="button" key={c.key} className={`category-chip ${categoriesSelected.includes(c.key) ? 'active' : ''}`} onClick={() => { setCategoriesSelected(prev=>prev.includes(c.key)?prev.filter(x=>x!==c.key):[...prev,c.key]); setShowAll(false); }}><span>{categoriesSelected.includes(c.key)?'✓':c.icon}</span>{c.name}</button>)}</div><p className="category-selection-hint">Select one or more categories. Leave all unselected to explore everything.</p><button className="search-submit category-continue" onClick={()=>document.querySelector('.provider-section')?.scrollIntoView({behavior:'smooth'})}>Continue to results <span>→</span></button>
       </section>
 
       <section className="provider-section">
