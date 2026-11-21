@@ -30,11 +30,11 @@ def channel_status():
     return {c:{"configured":channel_configured(c),"dispatch_enabled":channel_configured(c),"status":"ready" if channel_configured(c) else "not_configured"} for c in CHANNELS}
 
 def _send_push(db,delivery,notification,user):
-    from firebase_admin import credentials, initialize_app, messaging, get_app
+    from firebase_admin import credentials, initialize_app, messaging, get_app\n    from . import models
     raw=os.environ["FCM_SERVICE_ACCOUNT_JSON"]
     try: app=get_app()
     except ValueError: app=initialize_app(credentials.Certificate(json.loads(raw)))
-    tokens=[d.device_token for d in db.query(__import__("app.models",fromlist=["NotificationDevice"]).NotificationDevice).filter_by(user_id=user.id,is_active=True).all()]
+    tokens=[d.device_token for d in db.query(models.NotificationDevice).filter_by(user_id=user.id,is_active=True).all()]
     if not tokens: raise RuntimeError("No active push device registered for this user")
     successes=[]; failures=[]
     for token in tokens:
@@ -78,16 +78,16 @@ def dispatch_delivery(db,delivery):
 def process_pending(db,batch_size=25):
     from . import models
     now=datetime.utcnow()
-    rows=db.query(models.NotificationDelivery).filter(models.NotificationDelivery.status.in_(["queued","retry"]),models.NotificationDelivery.attempts<MAX_ATTEMPTS).order_by(models.NotificationDelivery.created_at).limit(batch_size).all()
+    rows=db.query(models.NotificationDelivery).filter(models.NotificationDelivery.status.in_(["queued","retry"]),models.NotificationDelivery.attempts<MAX_ATTEMPTS,((models.NotificationDelivery.next_attempt_at==None)|(models.NotificationDelivery.next_attempt_at<=now))).order_by(models.NotificationDelivery.created_at).limit(batch_size).all()
     processed=0
     for d in rows:
         d.status="sending";d.attempts+=1;d.updated_at=now;db.commit()
         try:
             provider_id=dispatch_delivery(db,d)
-            d.status="sent";d.provider_message_id=provider_id or "";d.last_error="";d.updated_at=datetime.utcnow()
+            d.status="sent";d.provider_message_id=provider_id or "";d.last_error="";d.next_attempt_at=None;d.updated_at=datetime.utcnow()
         except Exception as exc:
             d.last_error=str(exc)[:2000];d.updated_at=datetime.utcnow()
             if d.attempts>=MAX_ATTEMPTS: d.status="failed"
-            else: d.status="retry";d.updated_at=datetime.utcnow()+timedelta(seconds=min(3600,30*(2**(d.attempts-1))))
+            else:\n                d.status="retry"\n                d.next_attempt_at=datetime.utcnow()+timedelta(seconds=min(3600,30*(2**(d.attempts-1))))\n                d.updated_at=datetime.utcnow()
         db.commit();processed+=1
     return processed
