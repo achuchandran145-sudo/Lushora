@@ -31,6 +31,7 @@ class Provider(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     rating: Mapped[float] = mapped_column(default=0.0)
+    availability_config: Mapped[str] = mapped_column(Text, default='{}')
     services: Mapped[list["Service"]] = relationship(back_populates="provider", cascade="all, delete-orphan")
 
 class Service(Base):
