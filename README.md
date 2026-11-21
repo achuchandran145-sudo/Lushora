@@ -140,3 +140,14 @@ This is a development MVP, **not production-ready**. Do not use real sensitive i
 **Validating next:** test recent dashboards and exports with sample data, then fix issues.
 
 **Next major build:** customer profile/address management, followed by booking availability, notifications, payments and production hardening.
+
+
+## Notification channel framework
+- User preferences API: GET/PUT `/api/me/notification-preferences`
+- Admin readiness API: GET `/api/admin/notification-channels`
+- Admin delivery log API: GET `/api/admin/notification-deliveries`
+- FCM env vars: `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_JSON`
+- WhatsApp Cloud API: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`
+- SMS placeholder: `SMS_PROVIDER_API_KEY`, `SMS_SENDER_ID`
+
+This framework tracks channel readiness and creates delivery-log records. It does not yet dispatch external messages. Provider adapters, worker, retries, and delivery receipts remain to be implemented. Credentials are not stored in Git.
