@@ -325,6 +325,22 @@ def _create_notification(db:Session,user_id:int,title:str,message:str,notificati
     create_delivery_records(db,notification,preference)
 
 
+
+@app.post("/api/me/notification-devices")
+def register_notification_device(payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    token=str(payload.get("device_token","")).strip();platform=str(payload.get("platform","web")).strip().lower()
+    if not token: raise HTTPException(400,"device_token is required")
+    if platform not in {"web","android","ios"}: raise HTTPException(400,"platform must be web, android or ios")
+    device=db.query(models.NotificationDevice).filter_by(device_token=token).first()
+    if device: device.user_id=user.id;device.platform=platform;device.is_active=True
+    else: db.add(models.NotificationDevice(user_id=user.id,device_token=token,platform=platform,is_active=True))
+    db.commit();return {"message":"Device registered for push notifications"}
+@app.delete("/api/me/notification-devices")
+def unregister_notification_device(payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    token=str(payload.get("device_token","")).strip()
+    if not token: raise HTTPException(400,"device_token is required")
+    db.query(models.NotificationDevice).filter_by(user_id=user.id,device_token=token).update({"is_active":False})
+    db.commit();return {"message":"Device unregistered"}
 @app.get("/api/me/notification-preferences")
 def get_notification_preferences(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
     pref=db.query(models.NotificationPreference).filter(models.NotificationPreference.user_id==user.id).first()
