@@ -13,6 +13,11 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="customer", nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    first_name: Mapped[str] = mapped_column(String(80), default="")
+    last_name: Mapped[str] = mapped_column(String(80), default="")
+    street_address: Mapped[str] = mapped_column(Text, default="")
+    city: Mapped[str] = mapped_column(String(80), default="")
+    locality: Mapped[str] = mapped_column(String(120), default="")
 
 class Provider(Base):
     __tablename__ = "providers"
