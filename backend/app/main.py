@@ -316,6 +316,25 @@ def get_provider(provider_id: int, db: Session = Depends(get_db)):
     if not provider: raise HTTPException(404, "Provider not found")
     return provider
 
+def _create_notification(db:Session,user_id:int,title:str,message:str,notification_type:str="info",booking_id:int|None=None):
+    db.add(models.Notification(recipient_user_id=user_id,title=title,message=message,notification_type=notification_type,booking_id=booking_id))
+
+@app.get("/api/me/notifications")
+def my_notifications(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    items=db.query(models.Notification).filter(models.Notification.recipient_user_id==user.id).order_by(models.Notification.created_at.desc()).limit(100).all()
+    return [{"id":n.id,"title":n.title,"message":n.message,"type":n.notification_type,"booking_id":n.booking_id,"is_read":n.is_read,"created_at":n.created_at} for n in items]
+
+@app.patch("/api/me/notifications/{notification_id}/read")
+def mark_notification_read(notification_id:int,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    n=db.query(models.Notification).filter(models.Notification.id==notification_id,models.Notification.recipient_user_id==user.id).first()
+    if not n: raise HTTPException(404,"Notification not found")
+    n.is_read=True;db.commit();return {"id":n.id,"is_read":True}
+
+@app.patch("/api/me/notifications/read-all")
+def mark_all_notifications_read(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    db.query(models.Notification).filter(models.Notification.recipient_user_id==user.id,models.Notification.is_read==False).update({"is_read":True})
+    db.commit();return {"message":"All notifications marked as read"}
+
 @app.post("/api/bookings", response_model=schemas.BookingOut, status_code=201)
 def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
     provider = db.query(models.Provider).filter(models.Provider.id == payload.provider_id).first()
@@ -344,6 +363,10 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
         if attached_user.role != "customer": raise HTTPException(403, "Only customer accounts can book")
     booking = models.Booking(**payload.model_dump(), customer_user_id=attached_user.id if attached_user else None)
     db.add(booking)
+    if provider.owner_user_id:
+        _create_notification(db,provider.owner_user_id,"New booking request",f'{payload.customer_name} requested {service.name} for {payload.appointment_at.strftime("%d %b %Y, %I:%M %p")}.',"booking_request")
+    if attached_user:
+        _create_notification(db,attached_user.id,"Booking request sent",f'Your request for {provider.name} — {service.name} was sent to the business.',"booking_created")
     try:
         db.commit()
     except Exception:
@@ -371,6 +394,11 @@ def update_booking_status(booking_id: int, status: str = Query(...), user: model
     if status == "rejected" and booking.status != "requested": raise HTTPException(400, "Only requested bookings can be rejected")
     if status == "cancelled" and booking.status not in {"requested", "confirmed"}: raise HTTPException(400, "This booking cannot be cancelled")
     booking.status = status
+    if booking.customer_user_id:
+        status_title={"confirmed":"Booking confirmed","rejected":"Booking declined","cancelled":"Booking cancelled","completed":"Booking completed"}.get(status,"Booking update")
+        _create_notification(db,booking.customer_user_id,status_title,f'Your booking #{booking.id} status is now {status}.',"booking_status",booking.id)
+    if is_provider_owner and status in {"confirmed","rejected","cancelled","completed"}:
+        _create_notification(db,user.id,"Booking updated",f'Booking #{booking.id} is now {status}.',"booking_status",booking.id)
     db.commit()
     return {"id": booking.id, "status": booking.status}
 
