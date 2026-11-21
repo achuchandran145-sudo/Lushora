@@ -88,6 +88,9 @@ def process_pending(db,batch_size=25):
         except Exception as exc:
             d.last_error=str(exc)[:2000];d.updated_at=datetime.utcnow()
             if d.attempts>=MAX_ATTEMPTS: d.status="failed"
-            else:\n                d.status="retry"\n                d.next_attempt_at=datetime.utcnow()+timedelta(seconds=min(3600,30*(2**(d.attempts-1))))\n                d.updated_at=datetime.utcnow()
+            else:
+                d.status="retry"
+                d.next_attempt_at=datetime.utcnow()+timedelta(seconds=min(3600,30*(2**(d.attempts-1))))
+                d.updated_at=datetime.utcnow()
         db.commit();processed+=1
     return processed
