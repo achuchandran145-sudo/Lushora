@@ -39,3 +39,14 @@
 .notification-pref-row input[type=checkbox]{width:18px;height:18px;accent-color:#563354;cursor:pointer}
 
 .notification-pref-row input[type=checkbox]:disabled{opacity:.55;cursor:not-allowed}
+
+.customer-review-section{margin:22px 0;padding:18px;border:1px solid rgba(197,164,98,.28);border-radius:14px;background:linear-gradient(135deg,rgba(28,27,25,.96),rgba(16,16,16,.98));color:#f3eee4}
+.customer-review-section h3,.customer-review-list h4{font-family:'Playfair Display',serif;color:#d8b878;margin:0 0 14px}
+.customer-review-form{display:grid;gap:12px;margin:12px 0 18px;padding:16px;border:1px solid rgba(197,164,98,.2);border-radius:12px;background:#22201d}
+.customer-review-form label{display:grid;gap:6px;color:#c8c1b3;font-size:13px}
+.customer-review-form select,.customer-review-form textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #4a4235;background:#141312;color:#f4efe5}
+.customer-review-form textarea{min-height:76px;resize:vertical}
+.customer-review-form button{justify-self:start;border:0;border-radius:7px;background:#c6a15b;color:#171512;font-weight:700;padding:10px 16px;cursor:pointer}
+.customer-review-list article{padding:12px 0;border-top:1px solid rgba(197,164,98,.2)}
+.customer-review-list article p{margin:6px 0;color:#d4cbbd}
+.customer-review-list article small{color:#c6a15b}
