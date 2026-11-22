@@ -978,11 +978,9 @@ def test_customer_otp_request_is_disabled_when_development_mode_is_off(monkeypat
 
 def test_production_requires_private_portfolio_storage(monkeypatch, tmp_path):
     import app.main as main_module
-    monkeypatch.setenv('APP_ENV','production')
-    monkeypatch.setattr(main_module,'AUTH_SECRET',b'a'*40)
-    monkeypatch.setattr(main_module,'OTP_DEV_MODE',False)
-    monkeypatch.setattr(main_module,'_CORS_ORIGINS',['https://lushora.example'])
-    monkeypatch.setattr(main_module,'DATABASE_URL','postgresql://user:password@db.example/lushora')
+    import app.database as database_module
+    monkeypatch.setenv('APP_ENV','production') 
+    monkeypatch.setattr(database_module,'DATABASE_URL','postgresql://user:password@db.example/lushora')
     verification=tmp_path/'verification';verification.mkdir(mode=0o700)
     backup=tmp_path/'backup';backup.mkdir(mode=0o700)
     monkeypatch.setenv('LUSHORA_VERIFICATION_UPLOAD_DIR',str(verification))
