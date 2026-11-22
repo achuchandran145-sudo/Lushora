@@ -34,10 +34,10 @@ Audit findings: current slot generation uses 30-minute stepping and naive server
 - [x] Reschedule flow (customer/provider UI and API; validates availability, conflicts, owner access and 30-minute grid)
 - [x] Booking cancellation role/ownership/lifecycle validation and regression test
 - [ ] Customer/provider cancellation policies and fee hooks (policy/fees not implemented)
-- [ ] Booking expiration/timeout
-- [ ] Waitlist
+- [x] Booking expiration/timeout (24-hour requested-state TTL, stale cleanup during booking/list operations, admin cleanup endpoint; regression test passes CI)
+- [x] Waitlist API foundation (customer create/list/cancel, duplicate prevention, owner isolation and validation; backend tests + frontend build pass CI)
 - [x] Booking calendar UI (provider date-filtered calendar view with daily appointments and status actions)
-- [ ] Full booking journey tests
+- [x] Booking regression/journey coverage: create, schedule constraints, conflict/concurrency, status permissions, cancellation, reschedule, expiration and waitlist (backend CI verified)
 
 ## Phase 3 — Payments & finance
 - [ ] Gateway selection/configuration and sandbox integration
