@@ -36,7 +36,7 @@ Audit findings: current slot generation uses 30-minute stepping and naive server
 - [ ] Customer/provider cancellation policies and fee hooks (policy/fees not implemented)
 - [ ] Booking expiration/timeout
 - [ ] Waitlist
-- [ ] Booking calendar UI
+- [x] Booking calendar UI (provider date-filtered calendar view with daily appointments and status actions)
 - [ ] Full booking journey tests
 
 ## Phase 3 — Payments & finance
