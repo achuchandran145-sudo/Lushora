@@ -26,6 +26,7 @@ class BookingCreate(BaseModel):
     provider_id: int
     service_id: int
     appointment_at: datetime
+    staff_id: int | None = None
     notes: str = Field(default="", max_length=1000)
 
 class BookingOut(BaseModel):
