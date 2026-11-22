@@ -167,8 +167,9 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
     gateway_details=None
     if payment_gateway.razorpay_configured():
         try:
-            order=payment_gateway.create_order(payment.amount_inr,payment.receipt_number or f"lushora-payment-{payment.id}",{"lushora_payment_id":str(payment.id),"booking_id":str(payment.booking_id)})
-            payment.gateway="razorpay";payment.gateway_order_id=order["id"];payment.receipt_number=order.get("receipt",payment.receipt_number);db.commit()
+            receipt=payment.receipt_number or f"LUSHORA-PAY-{payment.id}"
+            order=payment_gateway.create_order(payment.amount_inr,receipt,{"lushora_payment_id":str(payment.id),"booking_id":str(payment.booking_id)})
+            payment.gateway="razorpay";payment.gateway_order_id=order["id"];payment.receipt_number=receipt;db.commit()
             gateway_details={"key_id":os.getenv("RAZORPAY_KEY_ID"),"order_id":payment.gateway_order_id,"amount":order.get("amount"),"currency":order.get("currency","INR")}
         except Exception as exc:
             payment.status="failed";db.commit()
@@ -176,6 +177,27 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
     return {"id":payment.id,"booking_id":payment.booking_id,"amount_inr":payment.amount_inr,"payment_type":payment.payment_type,"balance_due_inr":payment.balance_due_inr,"status":payment.status,"gateway":payment.gateway,"gateway_details":gateway_details,"message":"Razorpay order created; complete checkout" if gateway_details else "Payment record created; gateway not configured, no money collected"}
 
 
+
+@app.post("/api/payments/{payment_id}/retry-order")
+def retry_payment_order(payment_id:int,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    payment=db.query(models.Payment).filter(models.Payment.id==payment_id,models.Payment.customer_user_id==user.id).first()
+    if not payment:raise HTTPException(404,"Payment not found")
+    if payment.status=="paid":raise HTTPException(409,"Payment is already paid")
+    if payment.gateway=="razorpay" and payment.gateway_order_id and payment.status=="pending":return {"id":payment.id,"gateway":"razorpay","gateway_details":{"key_id":os.getenv("RAZORPAY_KEY_ID"),"order_id":payment.gateway_order_id,"amount":payment.amount_inr*100,"currency":"INR"},"status":payment.status,"message":"Existing payment order returned; do not create a duplicate"}
+    if not payment_gateway.razorpay_configured():raise HTTPException(400,"Razorpay credentials are not configured")
+    receipt=payment.receipt_number or f"LUSHORA-PAY-{payment.id}"
+    try:order=payment_gateway.create_order(payment.amount_inr,receipt,{"lushora_payment_id":str(payment.id),"booking_id":str(payment.booking_id)})
+    except Exception:raise HTTPException(502,"Gateway order retry failed; check gateway status before retrying")
+    payment.gateway="razorpay";payment.gateway_order_id=order["id"];payment.receipt_number=receipt;payment.status="pending";db.commit()
+    return {"id":payment.id,"gateway":"razorpay","gateway_details":{"key_id":os.getenv("RAZORPAY_KEY_ID"),"order_id":order["id"],"amount":order.get("amount"),"currency":order.get("currency","INR")},"status":"pending","message":"Gateway order recreated for retry"}
+
+@app.get("/api/payments/{payment_id}/receipt")
+def payment_receipt(payment_id:int,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    payment=db.query(models.Payment).filter(models.Payment.id==payment_id,models.Payment.customer_user_id==user.id).first()
+    if not payment:raise HTTPException(404,"Payment not found")
+    if payment.status not in {"paid","partially_refunded","refunded"}:raise HTTPException(400,"Receipt is available after payment is verified")
+    booking=db.query(models.Booking).filter_by(id=payment.booking_id).first();service=db.query(models.Service).filter_by(id=booking.service_id).first() if booking else None;provider=db.query(models.Provider).filter_by(id=booking.provider_id).first() if booking else None
+    return {"receipt_number":payment.receipt_number or f"LUSHORA-PAY-{payment.id}","payment_id":payment.id,"gateway_payment_id":payment.gateway_payment_id,"booking_id":payment.booking_id,"provider_name":provider.name if provider else "","service_name":service.name if service else "","customer_name":booking.customer_name if booking else user.full_name,"amount_inr":payment.amount_inr,"payment_type":payment.payment_type,"balance_due_inr":payment.balance_due_inr,"status":payment.status,"gateway":payment.gateway,"paid_at":payment.updated_at}
 
 @app.post("/api/payments/{payment_id}/verify")
 def verify_payment_checkout(payment_id:int,payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
