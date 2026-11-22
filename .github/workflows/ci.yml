@@ -36,7 +36,13 @@ jobs:
       - name: Audit Python dependencies
         run: pip install pip-audit && pip-audit -r backend/requirements.txt
       - name: Install PostgreSQL client tools
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        run: |
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          pg_dump --version
+          pg_restore --version
       - name: Run PostgreSQL migration and backup/restore drill
         working-directory: backend
         env:
