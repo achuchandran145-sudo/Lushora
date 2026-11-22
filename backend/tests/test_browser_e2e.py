@@ -176,7 +176,7 @@ def test_homepage_and_customer_login_accessibility_audit(browser, e2e_servers):
     axe_script = FRONTEND / "node_modules" / "axe-core" / "axe.min.js"
     assert axe_script.exists(), "CI must install axe-core before browser E2E"
     violations = []
-    for route in ("/", "/customer/login"):
+    for route in ("/", "/customer/login", "/business/login", "/admin/login"):
         browser.goto(e2e_servers["web"] + route)
         browser.add_script_tag(path=str(axe_script))
         results = browser.evaluate("""async () => {
@@ -193,3 +193,12 @@ def test_homepage_and_customer_login_accessibility_audit(browser, e2e_servers):
         violations.extend({"route": route, **v} for v in results)
     serious = [v for v in violations if v["impact"] in ("serious", "critical")]
     assert not serious, "Serious/critical accessibility violations: " + str(serious)
+
+
+def test_primary_routes_have_no_mobile_horizontal_overflow(browser, e2e_servers):
+    browser.set_viewport_size({"width": 390, "height": 844})
+    for route in ("/", "/customer/login", "/business/login", "/admin/login"):
+        browser.goto(e2e_servers["web"] + route)
+        browser.wait_for_load_state("domcontentloaded")
+        overflow = browser.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
+        assert not overflow, f"Horizontal overflow on mobile route {route}"
