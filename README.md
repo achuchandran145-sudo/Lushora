@@ -38,6 +38,18 @@ Initial categories: **Makeup, Salon, Skin Clinic, Nail Studio**. Initial target 
 - Customer residential addresses are not yet collected/stored in the current profile schema; address collection/display/export is pending.
 - Recent reporting features **still require local testing**.
 
+### Business verification workflow updates
+- Admin review supports **Approve**, **Under review**, **Return to Pending**, **Reject**, and **Delete permanently**.
+- Return to Pending maps to the `submitted` queue status; it does not delete the application.
+- Permanent delete removes the verification record, uploaded files (when safely within the private storage root), and matching provider listings/services.
+- Verification documents are stored in a private folder structure: business name / city / locality / account + verification ID. Files remain accessible only through authenticated Admin document endpoints.
+- Production deployments must configure `LUSHORA_VERIFICATION_UPLOAD_DIR` to a persistent private volume. Local/private filesystem storage is not a secure production document vault.
+
+### Deployment connectivity
+- Frontend builds need `VITE_LUSHORA_API` set to the deployed backend API base (including `/api`).
+- Backend must set `LUSHORA_CORS_ORIGINS` to the exact deployed frontend origin(s), comma-separated. Localhost development origins are retained by default.
+- A browser **Failed to fetch** error can still occur if the API URL is missing/wrong, backend is unavailable, or the deployed frontend origin is not in the backend CORS allow-list.
+
 ## Tech stack
 | Component | Stack |
 |---|---|
