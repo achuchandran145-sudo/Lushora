@@ -311,3 +311,13 @@ class PaymentWebhookEvent(Base):
     last_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AuthRateLimitEntry(Base):
+    __tablename__ = "auth_rate_limit_entries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scope: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    identifier_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
