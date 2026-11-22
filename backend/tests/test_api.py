@@ -494,3 +494,18 @@ def test_provider_branch_management_validation_and_owner_isolation():
     assert foreign.status_code==404
     assert client.delete(f'/api/provider/me/branches/{branch_id}',headers=h1).status_code==200
     assert client.get('/api/provider/me/branches',headers=h1).json()==[]
+
+
+def test_concurrent_booking_requests_do_not_double_book_same_time():
+    from concurrent.futures import ThreadPoolExecutor
+    client.post('/api/admin/demo-seed')
+    provider=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()[0]
+    service=provider['services'][0]
+    start=datetime.combine((datetime.now()+timedelta(days=20)).date(),datetime.strptime('11:00','%H:%M').time()).isoformat()
+    payload={'customer_name':'Concurrent Customer','customer_phone':'9876543314','provider_id':provider['id'],'service_id':service['id'],'appointment_at':start,'notes':''}
+    def submit():
+        return client.post('/api/bookings',json=payload)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        responses=list(pool.map(lambda _:submit(),range(2)))
+    statuses=sorted(r.status_code for r in responses)
+    assert statuses==[201,409], [r.status_code for r in responses]
