@@ -52,6 +52,7 @@ class Booking(Base):
     customer_phone: Mapped[str] = mapped_column(String(20), nullable=False)
     provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), nullable=False)
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False)
+    staff_id: Mapped[int | None] = mapped_column(ForeignKey("provider_staff.id"), nullable=True, index=True)
     appointment_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="requested")
     notes: Mapped[str] = mapped_column(Text, default="")
