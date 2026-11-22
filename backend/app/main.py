@@ -1283,8 +1283,11 @@ from fastapi import UploadFile, File
 from fastapi.responses import FileResponse
 import uuid
 
-VERIFICATION_UPLOAD_DIR = Path(os.getenv("LUSHORA_VERIFICATION_UPLOAD_DIR", "./private_verification_uploads")).resolve()
-VERIFICATION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+if _is_production_environment():
+    VERIFICATION_UPLOAD_DIR = Path(os.getenv("LUSHORA_VERIFICATION_UPLOAD_DIR", "/nonexistent/lushora-verification")).resolve()
+else:
+    VERIFICATION_UPLOAD_DIR = Path(os.getenv("LUSHORA_VERIFICATION_UPLOAD_DIR", "./private_verification_uploads")).resolve()
+    VERIFICATION_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_DOC_TYPES = {"application/pdf", "image/jpeg", "image/png"}
 MAX_DOC_BYTES = 8 * 1024 * 1024
 
