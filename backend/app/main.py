@@ -193,6 +193,51 @@ def admin_payment_reconciliation(limit:int=Query(100,ge=1,le=500),offset:int=Que
             findings.append({"payment_id":payment.id,"booking_id":booking.id,"customer_user_id":payment.customer_user_id,"provider_id":booking.provider_id,"payment_amount_inr":payment.amount_inr,"payment_status":payment.status,"booking_status":booking.status,"issue":issue,"updated_at":payment.updated_at})
     return {"checked_records":len(rows),"limit":limit,"offset":offset,"findings_count":len(findings),"findings":findings,"note":"Read-only reconciliation report. Findings require manual review; no payment/refund action was performed."}
 
+
+@app.post("/api/refunds",status_code=201)
+def request_refund(payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    payment_id=int(payload.get("payment_id",0))
+    reason=str(payload.get("reason","")).strip()[:1000]
+    payment=db.query(models.Payment).filter(models.Payment.id==payment_id,models.Payment.customer_user_id==user.id).first()
+    if not payment: raise HTTPException(404,"Payment not found")
+    if payment.status!="paid": raise HTTPException(400,"Refund requests require a paid payment")
+    booking=db.query(models.Booking).filter(models.Booking.id==payment.booking_id,models.Booking.customer_user_id==user.id).first()
+    if not booking: raise HTTPException(404,"Booking not found")
+    active=db.query(models.Refund).filter(models.Refund.payment_id==payment.id,models.Refund.status.in_({"requested","reviewing","approved"})).first()
+    if active: raise HTTPException(409,"An active refund request already exists for this payment")
+    amount=int(payload.get("amount_inr",payment.amount_inr))
+    if amount<=0 or amount>payment.amount_inr: raise HTTPException(400,"Refund amount must be between 1 and the paid amount")
+    refund=models.Refund(payment_id=payment.id,booking_id=booking.id,customer_user_id=user.id,amount_inr=amount,status="requested",reason=reason)
+    db.add(refund); db.commit(); db.refresh(refund)
+    return {"id":refund.id,"payment_id":refund.payment_id,"booking_id":refund.booking_id,"amount_inr":refund.amount_inr,"status":refund.status,"message":"Refund request recorded for manual review; no money has been refunded"}
+
+@app.get("/api/refunds/me")
+def my_refunds(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    rows=db.query(models.Refund).filter(models.Refund.customer_user_id==user.id).order_by(models.Refund.requested_at.desc()).all()
+    return [{"id":r.id,"payment_id":r.payment_id,"booking_id":r.booking_id,"amount_inr":r.amount_inr,"status":r.status,"reason":r.reason,"requested_at":r.requested_at,"reviewed_at":r.reviewed_at,"reviewer_note":r.reviewer_note} for r in rows]
+
+@app.get("/api/admin/refunds")
+def admin_refund_list(status:str|None=None,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    allowed={"requested","reviewing","approved","rejected","processed"}
+    if status and status not in allowed: raise HTTPException(400,"Invalid refund status filter")
+    q=db.query(models.Refund)
+    if status: q=q.filter(models.Refund.status==status)
+    total=q.count(); rows=q.order_by(models.Refund.requested_at.desc()).offset(offset).limit(limit).all()
+    return {"total":total,"limit":limit,"offset":offset,"refunds":[{"id":r.id,"payment_id":r.payment_id,"booking_id":r.booking_id,"customer_user_id":r.customer_user_id,"amount_inr":r.amount_inr,"status":r.status,"reason":r.reason,"requested_at":r.requested_at,"reviewed_at":r.reviewed_at,"reviewer_user_id":r.reviewer_user_id,"reviewer_note":r.reviewer_note,"external_reference":r.external_reference} for r in rows]}
+
+@app.patch("/api/admin/refunds/{refund_id}/review")
+def review_refund(refund_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    refund=db.query(models.Refund).filter(models.Refund.id==refund_id).first()
+    if not refund: raise HTTPException(404,"Refund not found")
+    action=str(payload.get("status","")).strip().lower()
+    if action not in {"reviewing","approved","rejected","processed"}: raise HTTPException(400,"Invalid refund review status")
+    if refund.status not in {"requested","reviewing"}: raise HTTPException(409,"Refund is no longer reviewable")
+    if action=="processed": raise HTTPException(400,"Processing a refund is disabled until a payment gateway is configured")
+    if action=="approved" and refund.status=="rejected": raise HTTPException(409,"Rejected refund cannot be approved")
+    refund.status=action; refund.reviewer_user_id=user.id; refund.reviewer_note=str(payload.get("reviewer_note","")).strip()[:1000]; refund.reviewed_at=datetime.utcnow()
+    db.commit(); db.refresh(refund)
+    return {"id":refund.id,"status":refund.status,"reviewer_user_id":refund.reviewer_user_id,"reviewed_at":refund.reviewed_at,"reviewer_note":refund.reviewer_note,"message":"Refund review updated; approval does not transfer money"}
+
 @app.post("/api/v2/admin/subscriptions",status_code=201)
 def create_subscription(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     provider_id=int(payload.get("provider_id",0));area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();tier=str(payload.get("tier","")).lower()
