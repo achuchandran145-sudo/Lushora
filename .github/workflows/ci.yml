@@ -74,6 +74,11 @@ jobs:
           bash scripts/restore_verify_postgres.sh
           PG_RESTORE_URL="${LUSHORA_RESTORE_DATABASE_URL/postgresql+psycopg:/postgresql:}"
           psql "$PG_RESTORE_URL" -v ON_ERROR_STOP=1 -c "SELECT marker FROM ci_backup_drill_marker WHERE id=1;" | grep -q backup-restore-ok
+          for table in users providers bookings payments business_verifications; do
+            source_count="$(psql "$PG_SOURCE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM $table;")"
+            restored_count="$(psql "$PG_RESTORE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM $table;")"
+            test "$source_count" = "$restored_count"
+          done
       - name: Install frontend dependencies for browser E2E
         working-directory: frontend
         run: npm ci
