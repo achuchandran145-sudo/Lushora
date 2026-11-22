@@ -519,6 +519,9 @@ def update_booking_status(booking_id: int, status: str = Query(...), user: model
     if status == "cancelled" and is_customer_owner and booking.status not in {"requested", "confirmed"}: raise HTTPException(400, "Customers can cancel only requested or confirmed bookings")
     if status == "cancelled" and is_provider_owner and booking.status not in {"requested", "confirmed"}: raise HTTPException(400, "Providers can cancel only requested or confirmed bookings")
     booking.status = status
+    if status == "cancelled":
+        # Cancel pending payment records; no gateway transaction has been collected yet.
+        db.query(models.Payment).filter(models.Payment.booking_id==booking.id,models.Payment.status=="pending").update({models.Payment.status:"cancelled"},synchronize_session=False)
     if booking.customer_user_id:
         status_title={"confirmed":"Booking confirmed","rejected":"Booking declined","cancelled":"Booking cancelled","completed":"Booking completed"}.get(status,"Booking update")
         _create_notification(db,booking.customer_user_id,status_title,f'Your booking #{booking.id} status is now {status}.',"booking_status",booking.id)
