@@ -28,6 +28,16 @@ def test_production_settings_are_validated_during_startup(monkeypatch):
         main_module.bootstrap_admin_from_environment()
 
 
+def test_production_settings_reject_missing_cors_origins(monkeypatch):
+    import app.main as main_module
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setattr(main_module, 'AUTH_SECRET', b'a' * 40)
+    monkeypatch.setattr(main_module, 'OTP_DEV_MODE', False)
+    monkeypatch.setattr(main_module, '_CORS_ORIGINS', [])
+    with pytest.raises(RuntimeError, match='LUSHORA_CORS_ORIGINS'):
+        main_module._validate_production_settings()
+
+
 def test_demo_seed_disabled_in_production(monkeypatch):
     monkeypatch.setenv('APP_ENV', 'production')
     assert client.post('/api/admin/demo-seed').status_code == 404
