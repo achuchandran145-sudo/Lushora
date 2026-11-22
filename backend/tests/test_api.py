@@ -607,3 +607,18 @@ def test_provider_can_configure_cancellation_policy_with_bounds():
     valid=client.put('/api/provider/me/availability',headers=h,json=payload);assert valid.status_code==200 and valid.json()['cancellation_fee_percent']==25
     assert client.put('/api/provider/me/availability',headers=h,json={**payload,'cancellation_min_hours':169}).status_code==400
     assert client.put('/api/provider/me/availability',headers=h,json={**payload,'cancellation_fee_percent':101}).status_code==400
+
+
+def test_full_and_advance_payment_amounts_and_invalid_type():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Advance Customer','email':'advance-customer@example.com','phone':'9876543323','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    provider=client.get('/api/providers').json()[0];service=provider['services'][0]
+    at=datetime.combine((datetime.now()+timedelta(days=26)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
+    booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Advance Customer','customer_phone':'9876543323','provider_id':provider['id'],'service_id':service['id'],'appointment_at':at,'notes':''});assert booking.status_code==201
+    bid=booking.json()['id']
+    invalid=client.post('/api/payments',headers={**headers,'Idempotency-Key':'advance-invalid-0001'},json={'booking_id':bid,'payment_type':'other'});assert invalid.status_code==400
+    advance=client.post('/api/payments',headers={**headers,'Idempotency-Key':'advance-valid-0001'},json={'booking_id':bid,'payment_type':'advance'});assert advance.status_code==201
+    total=service['price_inr'];expected=max(1,(total*20+99)//100)
+    assert advance.json()['amount_inr']==expected and advance.json()['balance_due_inr']==total-expected and advance.json()['payment_type']=='advance'
+    assert advance.json()['gateway']=='unconfigured' and 'no money collected' in advance.json()['message'].lower()
