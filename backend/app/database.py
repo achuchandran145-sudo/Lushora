@@ -109,6 +109,9 @@ def migrate_sqlite_schema():
             conn.execute(text("ALTER TABLE payments ADD COLUMN payment_type VARCHAR(20) NOT NULL DEFAULT 'full'"))
         if "balance_due_inr" not in payment_cols:
             conn.execute(text("ALTER TABLE payments ADD COLUMN balance_due_inr INTEGER NOT NULL DEFAULT 0"))
+        for col,sql in [("gateway_order_id","ALTER TABLE payments ADD COLUMN gateway_order_id VARCHAR(120) NOT NULL DEFAULT ''"),("gateway_payment_id","ALTER TABLE payments ADD COLUMN gateway_payment_id VARCHAR(120) NOT NULL DEFAULT ''"),("receipt_number","ALTER TABLE payments ADD COLUMN receipt_number VARCHAR(40) NOT NULL DEFAULT ''")]:
+            if col not in payment_cols:
+                conn.execute(text(sql))
         booking_cols = {c["name"] for c in inspector.get_columns("bookings")} if "bookings" in table_names else set()
         if "customer_user_id" not in booking_cols:
             conn.execute(text("ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER"))
