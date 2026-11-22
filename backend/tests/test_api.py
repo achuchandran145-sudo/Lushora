@@ -1,8 +1,9 @@
 import json
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
-from app.main import app
-from app.database import Base, engine
+from app.main import app, _password_hash, _make_token
+from app.database import Base, engine, SessionLocal
+from app.models import User
 
 client = TestClient(app)
 
@@ -351,9 +352,11 @@ def test_admin_payment_reconciliation_is_forbidden_to_customer():
 def test_refund_request_and_admin_review_foundation():
     client.post('/api/admin/demo-seed')
     cust=client.post('/api/auth/register',json={'full_name':'Refund Customer','email':'refund-customer@example.com','phone':'9876543217','password':'StrongPass123','role':'customer'})
-    admin=client.post('/api/auth/register',json={'full_name':'Refund Admin','email':'refund-admin@example.com','phone':'9876543218','password':'StrongPass123','role':'admin'})
+    session=SessionLocal()
+    admin_user=User(full_name='Refund Admin',email='refund-admin@example.com',phone='9876543218',password_hash=_password_hash('StrongPass123'),role='admin',is_active=True)
+    session.add(admin_user); session.commit(); session.refresh(admin_user); admin_token=_make_token(admin_user.id); session.close()
     cust_headers={'Authorization':f"Bearer {cust.json()['access_token']}"}
-    admin_headers={'Authorization':f"Bearer {admin.json()['access_token']}"}
+    admin_headers={'Authorization':f"Bearer {admin_token}"}
     p=client.get('/api/providers').json()[0]; service=p['services'][0]
     appt=datetime.combine((datetime.now()+timedelta(days=11)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
     booking=client.post('/api/bookings',headers=cust_headers,json={'customer_name':'Refund Customer','customer_phone':'9876543217','provider_id':p['id'],'service_id':service['id'],'appointment_at':appt,'notes':''})
