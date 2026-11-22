@@ -17,7 +17,8 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Address and contact data model/UX completeness
 - [ ] Provider profile editing and onboarding completion UX
 - [ ] Provider portfolio/gallery with secure media validation/storage
-- [ ] Service catalog CRUD/edit UX (current create/delete; verify edit)
+- [x] Provider service edit API (name, price, duration) with owner validation + regression tests
+- [ ] Service catalog CRUD/edit UX in provider portal (current create/delete UI; edit UI pending)
 - [ ] Business operating hours, breaks, holidays and closure rules
 - [ ] Staff/member profiles and permissions (future provider feature)
 - [ ] Multi-branch/locations support
@@ -58,7 +59,8 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [x] Admin moderation API (approve/reject)
 - [x] Provider reply API
 - [x] Public ratings aggregated from approved reviews
-- [ ] Review UI for customer/provider/admin
+- [x] Customer review submission UI and submitted-review display
+- [ ] Provider/admin review UI (reply/moderation frontend)
 - [ ] Review model/API/UI
 - [ ] Reviews restricted to eligible completed bookings
 - [ ] One review per booking; edit policy
