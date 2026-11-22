@@ -169,6 +169,20 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.wait_for_url("**/business/onboarding", timeout=15000)
     assert browser.get_by_role("heading", name="Verify your business").count() == 1
 
+    # Exercise the provider verification submission and private-document upload journey.
+    browser.get_by_label("Business name").fill("Browser Test Salon")
+    browser.get_by_label("Salon").check()
+    browser.get_by_label("City").fill("Coimbatore")
+    browser.get_by_label("Locality / Area").fill("Vadavalli")
+    browser.get_by_label("Full business address").fill("E2E Test Address, Vadavalli, Coimbatore")
+    browser.get_by_label("Aadhaar last 4 digits only").fill("1234")
+    browser.get_by_label("PAN number").fill("ABCDE1234F")
+    test_pdf = {"name": "test-document.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4\\nLUSHORA E2E TEST DOCUMENT\\n%%EOF"}
+    for label in ["Aadhaar document", "PAN document", "Business proof (GST / registration / license)"]:
+        browser.get_by_label(label).set_input_files(test_pdf)
+    browser.get_by_role("button", name="SUBMIT FOR ADMIN VERIFICATION").click()
+    browser.get_by_text("Verification submitted. Your business is pending admin review.", exact=True).wait_for(timeout=15000)
+
     browser.goto(e2e_servers["web"] + "/admin/login")
     browser.get_by_label("Business / admin email").fill("e2e-admin@lushora.test")
     browser.get_by_label("Password").fill("StrongAdmin123!")
