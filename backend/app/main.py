@@ -180,7 +180,7 @@ def admin_payment_list(status:str|None=None,booking_id:int|None=None,customer_us
     if customer_user_id is not None: q=q.filter(models.Payment.customer_user_id==customer_user_id)
     total=q.count()
     rows=q.order_by(models.Payment.created_at.desc()).offset(offset).limit(limit).all()
-    return {"total":total,"limit":limit,"offset":offset,"payments":[{"id":p.id,"booking_id":p.booking_id,"customer_user_id":p.customer_user_id,"amount_inr":p.amount_inr,"status":p.status,"gateway":p.gateway,"gateway_reference":p.gateway_reference,"created_at":p.created_at,"updated_at":p.updated_at} for p in rows]}
+    return {"total":total,"limit":limit,"offset":offset,"payments":[{"id":p.id,"booking_id":p.booking_id,"customer_user_id":p.customer_user_id,"amount_inr":p.amount_inr,"payment_type":p.payment_type,"balance_due_inr":p.balance_due_inr,"status":p.status,"gateway":p.gateway,"gateway_reference":p.gateway_reference,"created_at":p.created_at,"updated_at":p.updated_at} for p in rows]}
 
 
 @app.get("/api/admin/payments/summary")
@@ -191,7 +191,9 @@ def admin_payment_summary(user:models.User=Depends(require_role("admin")),db:Ses
     total_amount=sum(item["amount_inr"] for item in by_status.values())
     paid_amount=by_status.get("paid",{}).get("amount_inr",0)
     pending_amount=by_status.get("pending",{}).get("amount_inr",0)
-    return {"total_count":total_count,"total_amount_inr":total_amount,"paid_amount_inr":paid_amount,"pending_amount_inr":pending_amount,"by_status":by_status}
+    type_rows=db.query(models.Payment.payment_type,func.count(models.Payment.id),func.coalesce(func.sum(models.Payment.amount_inr),0),func.coalesce(func.sum(models.Payment.balance_due_inr),0)).group_by(models.Payment.payment_type).all()
+    by_type={kind:{"count":int(count),"amount_inr":int(amount),"balance_due_inr":int(balance)} for kind,count,amount,balance in type_rows}
+    return {"total_count":total_count,"total_amount_inr":total_amount,"paid_amount_inr":paid_amount,"pending_amount_inr":pending_amount,"by_status":by_status,"by_payment_type":by_type}
 
 
 @app.get("/api/admin/commission-rules")
