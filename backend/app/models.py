@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
@@ -316,6 +316,7 @@ class PaymentWebhookEvent(Base):
 
 class AuthRateLimitEntry(Base):
     __tablename__ = "auth_rate_limit_entries"
+    __table_args__ = (UniqueConstraint("scope", "identifier_hash", name="uq_auth_rate_limit_scope_identifier"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     scope: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     identifier_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
