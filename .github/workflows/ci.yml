@@ -7,6 +7,20 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lushora
+          POSTGRES_PASSWORD: lushora_ci_password
+          POSTGRES_DB: lushora_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lushora -d lushora_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +35,24 @@ jobs:
         run: bash -n scripts/migrate_production.sh scripts/backup_postgres.sh scripts/restore_verify_postgres.sh
       - name: Audit Python dependencies
         run: pip install pip-audit && pip-audit -r backend/requirements.txt
+      - name: Install PostgreSQL client tools
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Run PostgreSQL migration and backup/restore drill
+        working-directory: backend
+        env:
+          LUSHORA_DATABASE_URL: postgresql+psycopg://lushora:lushora_ci_password@127.0.0.1:5432/lushora_ci
+          LUSHORA_RESTORE_DATABASE_URL: postgresql+psycopg://lushora:lushora_ci_password@127.0.0.1:5432/lushora_restore_ci
+          LUSHORA_BACKUP_DIR: ${{ runner.temp }}/lushora-ci-backups
+          LUSHORA_BACKUP_RETENTION_DAYS: 7
+          PGPASSWORD: lushora_ci_password
+        run: |
+          python -m alembic -c alembic.ini upgrade head
+          psql "$LUSHORA_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS ci_backup_drill_marker (id INTEGER PRIMARY KEY, marker TEXT NOT NULL); INSERT INTO ci_backup_drill_marker VALUES (1, 'backup-restore-ok');"
+          bash scripts/backup_postgres.sh
+          BACKUP_FILE="$(find "$LUSHORA_BACKUP_DIR" -type f -name 'lushora-*.dump' -print -quit)"
+          psql "$LUSHORA_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE lushora_restore_ci;"
+          bash scripts/restore_verify_postgres.sh
+          psql "$LUSHORA_RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT marker FROM ci_backup_drill_marker WHERE id=1;" | grep -q backup-restore-ok
       - name: Install frontend dependencies for browser E2E
         working-directory: frontend
         run: npm ci
