@@ -220,3 +220,19 @@ class Payment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+
+
+class Refund(Base):
+    __tablename__ = "refunds"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    payment_id: Mapped[int] = mapped_column(ForeignKey("payments.id"), index=True, nullable=False)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), index=True, nullable=False)
+    customer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    amount_inr: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="requested", index=True, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewer_note: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    external_reference: Mapped[str] = mapped_column(String(120), default="", nullable=False)
