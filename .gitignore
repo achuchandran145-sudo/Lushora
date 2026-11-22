@@ -41,3 +41,7 @@ htmlcov/
 
 # Generated files
 *.zip
+
+# Private verification documents and uploaded identity/business files
+backend/private_verification_uploads/
+backend/uploads/
