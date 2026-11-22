@@ -298,6 +298,24 @@ def test_failed_login_creates_privacy_preserving_audit_event_and_admin_route_is_
     assert response.status_code==200
     assert any(item['event_type']=='login_failed' for item in response.json())
 
+def test_sqlite_migration_deduplicates_and_uniquifies_auth_rate_limits(tmp_path,monkeypatch):
+    from sqlalchemy import create_engine,text,inspect
+    import app.database as database_module
+    legacy_engine=create_engine(f"sqlite:///{(tmp_path/'legacy-auth.db').as_posix()}")
+    with legacy_engine.begin() as connection:
+        connection.execute(text("CREATE TABLE users (id INTEGER PRIMARY KEY, full_name VARCHAR(120), email VARCHAR(255), phone VARCHAR(30), password_hash VARCHAR(255), role VARCHAR(20), is_active BOOLEAN)"))
+        connection.execute(text("CREATE TABLE auth_rate_limit_entries (id INTEGER PRIMARY KEY, scope VARCHAR(40) NOT NULL, identifier_hash VARCHAR(64) NOT NULL, window_started_at DATETIME NOT NULL, attempts INTEGER NOT NULL, blocked_until DATETIME)"))
+        connection.execute(text("INSERT INTO auth_rate_limit_entries (scope,identifier_hash,window_started_at,attempts) VALUES ('login','hashed-key','2026-01-01 00:00:00',2),('login','hashed-key','2026-01-01 00:00:00',4)"))
+    monkeypatch.setattr(database_module,'engine',legacy_engine)
+    monkeypatch.setattr(database_module,'DATABASE_URL','sqlite://')
+    database_module.migrate_sqlite_schema()
+    with legacy_engine.connect() as connection:
+        rows=connection.execute(text("SELECT scope,identifier_hash,attempts FROM auth_rate_limit_entries")).all()
+        assert len(rows)==1
+        indexes=inspect(legacy_engine).get_indexes('auth_rate_limit_entries')
+        assert any(index['name']=='uq_auth_rate_limit_scope_identifier' and index['unique'] for index in indexes)
+    legacy_engine.dispose()
+
 def test_customer_register_login_and_me():
     registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123!','role':'customer'})
     assert registration.status_code == 201
