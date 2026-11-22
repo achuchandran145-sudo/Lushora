@@ -89,7 +89,7 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Define category/area subscription plans and pricing configuration
 - [ ] Trial lifecycle
 - [ ] Subscription checkout/payment
-- [ ] Activation, renewal, pause, cancellation and expiry
+- [x] Admin-managed activation, renewal, pause, cancellation and expiry term handling (backend foundation; automated billing/entitlement enforcement pending)
 - [ ] Grace period and failed-renewal recovery
 - [ ] Enforce plan entitlements
 - [ ] Featured listing/ranking entitlement
