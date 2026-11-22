@@ -45,6 +45,21 @@ Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires gre
 - [ ] Accessibility scan must produce clean serious/critical results; lower-impact findings still require review.
 - [ ] Secret scan results must be reviewed; any historical real secrets must be rotated, and history rewriting requires explicit approval.
 
+### Phase 0 evidence updates (2026-11-22)
+- [x] PostgreSQL 16 client mismatch fixed and backup/restore drill now passed on latest observed CI.
+- [x] Python dependency audit passed on latest observed CI.
+- [x] Frontend build and npm audit passed on latest observed CI.
+- [x] Gitleaks full-history scan passed on latest observed CI.
+- [x] Backend unit/API suite: 76 passed in latest observed run; one failure was accessibility audit (contrast + logo accessible-name mismatch).
+- [x] Accessibility contrast colors corrected across homepage and portal styles.
+- [x] Logo accessible name updated to include visible brand/tagline.
+- [ ] Latest CI after accessibility fixes must be fully green.
+- [ ] Lower-impact axe findings and keyboard/focus/accessibility manual review remain.
+- [ ] Full customer/provider/admin journeys and additional responsive checks remain.
+- [ ] Production security configuration, PostgreSQL upgrade/rollback evidence, restore RPO/RTO, and operational monitoring evidence remain.
+- [ ] Notification provider live credentials/delivery and deployment/recovery remain environment-dependent.
+- [ ] Phase 0 sign-off remains blocked until all remaining validation evidence is collected.
+
 ### Known CI failures being remediated (2026-11-22)
 - [ ] Browser E2E OTP wait was querying a null input before UI render; replaced with locator wait and value assertion.
 - [ ] Browser E2E category selector was brittle; switched to category-chip locator.
