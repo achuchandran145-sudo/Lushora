@@ -45,6 +45,42 @@ def test_admin_bootstrap_rejects_weak_password(monkeypatch):
     with pytest.raises(RuntimeError,match='LUSHORA_ADMIN_PASSWORD'):
         main_module.bootstrap_admin_from_environment()
 
+def test_production_rejects_sqlite_database(monkeypatch):
+    import app.main as main_module
+    import app.database as database_module
+    monkeypatch.setenv('APP_ENV','production')
+    monkeypatch.setattr(main_module,'AUTH_SECRET',b'a'*40)
+    monkeypatch.setattr(main_module,'OTP_DEV_MODE',False)
+    monkeypatch.setattr(main_module,'_CORS_ORIGINS',['https://app.lushora.example'])
+    monkeypatch.setattr(database_module,'DATABASE_URL','sqlite:///./lushora.db')
+    with pytest.raises(RuntimeError,match='PostgreSQL'):
+        main_module._validate_production_settings()
+
+def test_production_rejects_missing_private_storage_and_backup_configuration(monkeypatch):
+    import app.main as main_module
+    import app.database as database_module
+    monkeypatch.setenv('APP_ENV','production')
+    monkeypatch.setattr(main_module,'AUTH_SECRET',b'a'*40)
+    monkeypatch.setattr(main_module,'OTP_DEV_MODE',False)
+    monkeypatch.setattr(main_module,'_CORS_ORIGINS',['https://app.lushora.example'])
+    monkeypatch.setattr(database_module,'DATABASE_URL','postgresql+psycopg://user:pass@host/db')
+    monkeypatch.delenv('LUSHORA_VERIFICATION_UPLOAD_DIR',raising=False)
+    monkeypatch.delenv('LUSHORA_BACKUP_DIR',raising=False)
+    monkeypatch.delenv('LUSHORA_BACKUP_RETENTION_DAYS',raising=False)
+    with pytest.raises(RuntimeError,match='VERIFICATION_UPLOAD_DIR'):
+        main_module._validate_production_settings()
+
+def test_production_rejects_wildcard_cors_origin(monkeypatch):
+    import app.main as main_module
+    import app.database as database_module
+    monkeypatch.setenv('APP_ENV','production')
+    monkeypatch.setattr(main_module,'AUTH_SECRET',b'a'*40)
+    monkeypatch.setattr(main_module,'OTP_DEV_MODE',False)
+    monkeypatch.setattr(main_module,'_CORS_ORIGINS',['https://*.lushora.example'])
+    monkeypatch.setattr(database_module,'DATABASE_URL','postgresql+psycopg://user:pass@host/db')
+    with pytest.raises(RuntimeError,match='CORS'):
+        main_module._validate_production_settings()
+
 def test_demo_seed_disabled_in_production(monkeypatch):
     monkeypatch.setenv('APP_ENV', 'production')
     assert client.post('/api/admin/demo-seed').status_code == 404
