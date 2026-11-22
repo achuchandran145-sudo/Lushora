@@ -328,3 +328,9 @@ def test_payment_rejects_second_pending_record_with_different_key():
     assert first.status_code==201
     second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'dup-payment-0002'})
     assert second.status_code==409
+
+def test_admin_payment_list_is_forbidden_to_customer():
+    customer=client.post('/api/auth/register',json={'full_name':'Payments Admin Guard','email':'payments-admin-guard@example.com','phone':'9876543294','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    response=client.get('/api/admin/payments',headers=headers)
+    assert response.status_code==403
