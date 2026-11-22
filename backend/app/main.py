@@ -595,7 +595,6 @@ def create_waitlist_entry(payload:schemas.WaitlistCreate,user:models.User=Depend
     provider=db.query(models.Provider).filter(models.Provider.id==payload.provider_id).first()
     service=db.query(models.Service).filter(models.Service.id==payload.service_id,models.Service.provider_id==payload.provider_id).first()
     if not provider or not service: raise HTTPException(404,"Provider or service not found")
-    if staff_id is not None and not db.query(models.ProviderStaff).filter(models.ProviderStaff.id==staff_id,models.ProviderStaff.provider_id==provider_id,models.ProviderStaff.is_active==True).first(): raise HTTPException(400,"Staff member is unavailable for this provider")
     if payload.preferred_date.tzinfo is not None: raise HTTPException(400,"Preferred date must be local India time without timezone offset")
     if payload.preferred_date.date()<=datetime.now(LUSHORA_LOCAL_TZ).date(): raise HTTPException(400,"Preferred date must be in the future")
     for value in [payload.preferred_time_start,payload.preferred_time_end]:
@@ -657,6 +656,10 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
             raise HTTPException(400,"Appointment overlaps provider break time")
 
 
+    # Optional staff assignment: only active staff belonging to this provider may be selected.
+    if payload.staff_id is not None:
+        assigned_staff=db.query(models.ProviderStaff).filter(models.ProviderStaff.id==payload.staff_id,models.ProviderStaff.provider_id==provider.id,models.ProviderStaff.is_active==True).first()
+        if not assigned_staff: raise HTTPException(400,"Selected staff member is unavailable for this provider")
     # Optional staff assignment: only active staff belonging to this provider may be selected.
     if payload.staff_id is not None:
         assigned_staff=db.query(models.ProviderStaff).filter(models.ProviderStaff.id==payload.staff_id,models.ProviderStaff.provider_id==provider.id,models.ProviderStaff.is_active==True).first()
