@@ -96,6 +96,47 @@ def test_overlapping_booking_rejected_but_non_overlapping_allowed():
     assert client.post('/api/bookings', json=non_overlap).status_code == 201
 
 
+def test_login_rate_limits_after_repeated_bad_passwords():
+    client.post('/api/auth/register',json={'full_name':'Rate User','email':'rate-login@example.com','phone':'9876543290','password':'StrongPass123','role':'customer'})
+    for _ in range(5):
+        response=client.post('/api/auth/login',json={'email':'rate-login@example.com','password':'wrong-password'})
+        assert response.status_code==401
+    blocked=client.post('/api/auth/login',json={'email':'rate-login@example.com','password':'StrongPass123'})
+    assert blocked.status_code==429
+    assert blocked.headers.get('Retry-After')
+
+def test_login_rate_limit_clears_after_successful_authentication():
+    client.post('/api/auth/register',json={'full_name':'Rate User','email':'rate-clear@example.com','phone':'9876543291','password':'StrongPass123','role':'customer'})
+    for _ in range(2):
+        assert client.post('/api/auth/login',json={'email':'rate-clear@example.com','password':'wrong-password'}).status_code==401
+    success=client.post('/api/auth/login',json={'email':'rate-clear@example.com','password':'StrongPass123'})
+    assert success.status_code==200
+    assert client.post('/api/auth/login',json={'email':'rate-clear@example.com','password':'wrong-password'}).status_code==401
+
+def test_registration_rate_limit_by_email():
+    for _ in range(5):
+        response=client.post('/api/auth/register',json={'full_name':'Spam User','email':'spam-register@example.com','phone':'9876543292','password':'StrongPass123','role':'customer'})
+        assert response.status_code==201
+    blocked=client.post('/api/auth/register',json={'full_name':'Spam User','email':'spam-register@example.com','phone':'9876543292','password':'StrongPass123','role':'customer'})
+    assert blocked.status_code==429
+
+def test_otp_request_rate_limit_by_phone_and_ip():
+    phone='9876543293'
+    # Avoid the 60-second resend cooldown by removing challenge rows between calls;
+    # the persistent rate limiter still tracks the hourly/daily quotas.
+    for _ in range(3):
+        response=client.post('/api/v2/customer/otp/request',json={'phone':phone})
+        assert response.status_code==200
+        from app.database import SessionLocal
+        db=SessionLocal()
+        try:
+            db.query(__import__('app.models',fromlist=['OTPChallenge']).OTPChallenge).filter_by(phone='+91'+phone).delete()
+            db.commit()
+        finally:
+            db.close()
+    blocked=client.post('/api/v2/customer/otp/request',json={'phone':phone})
+    assert blocked.status_code==429
+
 def test_customer_register_login_and_me():
     registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123','role':'customer'})
     assert registration.status_code == 201
