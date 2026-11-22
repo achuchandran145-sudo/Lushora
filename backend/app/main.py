@@ -515,12 +515,16 @@ def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, wind
         entry.window_started_at = now
         entry.attempts = 0
         entry.blocked_until = None
+    if not consume and entry.attempts >= limit:
+        entry.blocked_until = now + timedelta(seconds=window_seconds)
+        db.commit()
+        return False, window_seconds
     if consume:
-        entry.attempts += 1
-        if entry.attempts > limit:
+        if entry.attempts >= limit:
             entry.blocked_until = now + timedelta(seconds=window_seconds)
             db.commit()
             return False, window_seconds
+        entry.attempts += 1
         db.commit()
     return True, 0
 
