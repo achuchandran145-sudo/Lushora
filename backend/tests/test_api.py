@@ -1029,7 +1029,7 @@ def test_otp_audit_events_hash_phone_and_ip_and_never_store_otp():
         ).order_by(SecurityAuditEvent.created_at.asc()).all()
         assert {event.event_type for event in events} >= {'otp_requested', 'otp_verify_success'}
         expected_phone_hash = __import__('app.main', fromlist=['_rate_limit_identifier'])._rate_limit_identifier('+91' + phone)
-        expected_ip_hash = __import__('app.main', fromlist=['_rate_limit_identifier'])._rate_limit_identifier('127.0.0.1')
+        expected_ip_hash = __import__('app.main', fromlist=['_rate_limit_identifier'])._rate_limit_identifier('testclient')
         for event in events:
             assert event.identifier_hash == expected_phone_hash
             assert event.ip_hash == expected_ip_hash
