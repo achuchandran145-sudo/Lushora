@@ -83,3 +83,20 @@ def test_provider_registration_is_pending():
     assert submission.status_code == 201
     assert submission.json()['approval_status'] == 'pending'
     assert len(client.get('/api/providers').json()) == 0
+
+def test_notification_preferences_default_external_channels_off():
+    registration=client.post('/api/auth/register',json={'full_name':'Notify User','email':'notify-default@example.com','phone':'9876543212','password':'StrongPass123','role':'customer'})
+    token=registration.json()['access_token'];headers={'Authorization':f'Bearer {token}'}
+    prefs=client.get('/api/me/notification-preferences',headers=headers)
+    assert prefs.status_code==200
+    assert prefs.json()=={'in_app_enabled':True,'push_enabled':False,'whatsapp_enabled':False,'sms_enabled':False}
+
+def test_notification_preferences_validate_and_opt_in_opt_out():
+    registration=client.post('/api/auth/register',json={'full_name':'Notify User','email':'notify-opt@example.com','phone':'9876543213','password':'StrongPass123','role':'customer'})
+    token=registration.json()['access_token'];headers={'Authorization':f'Bearer {token}'}
+    invalid=client.put('/api/me/notification-preferences',headers=headers,json={'sms_enabled':'yes'})
+    assert invalid.status_code==400
+    opted=client.put('/api/me/notification-preferences',headers=headers,json={'sms_enabled':True,'whatsapp_enabled':True})
+    assert opted.status_code==200 and opted.json()['sms_enabled'] is True and opted.json()['whatsapp_enabled'] is True
+    opted_out=client.put('/api/me/notification-preferences',headers=headers,json={'sms_enabled':False})
+    assert opted_out.status_code==200 and opted_out.json()['sms_enabled'] is False and opted_out.json()['whatsapp_enabled'] is True
