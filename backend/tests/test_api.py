@@ -149,6 +149,33 @@ def test_otp_verify_attempts_are_limited_and_challenge_consumed():
     blocked=client.post('/api/v2/customer/otp/verify',json={'phone':'9876543294','otp':otp})
     assert blocked.status_code==429
 
+def test_registration_rejects_weak_passwords():
+    weak_passwords=['short1A!','alllowercase123!','ALLUPPERCASE123!','NoDigitsHere!!','NoSpecial12345']
+    for index,password in enumerate(weak_passwords):
+        response=client.post('/api/auth/register',json={'full_name':'Weak Password','email':f'weak-{index}@example.com','phone':'9876543300','password':password,'role':'customer'})
+        assert response.status_code==422
+
+def test_logout_revokes_existing_access_token():
+    registration=client.post('/api/auth/register',json={'full_name':'Logout User','email':'logout-user@example.com','phone':'9876543301','password':'StrongPass123!','role':'customer'})
+    token=registration.json()['access_token']
+    headers={'Authorization':f'Bearer {token}'}
+    assert client.get('/api/auth/me',headers=headers).status_code==200
+    assert client.post('/api/auth/logout',headers=headers).status_code==200
+    assert client.get('/api/auth/me',headers=headers).status_code==401
+
+def test_token_claims_require_issuer_and_version():
+    import app.main as main_module
+    db=SessionLocal()
+    try:
+        user=User(full_name='Token User',email='token-user@example.com',phone='',password_hash=_password_hash('StrongPass123!'),role='customer')
+        db.add(user);db.commit();db.refresh(user)
+        valid=main_module._make_token(user.id,user.auth_token_version)
+        assert main_module._get_user_from_token(valid,db) is not None
+        user.auth_token_version += 1;db.commit()
+        assert main_module._get_user_from_token(valid,db) is None
+    finally:
+        db.close()
+
 def test_customer_register_login_and_me():
     registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123','role':'customer'})
     assert registration.status_code == 201
