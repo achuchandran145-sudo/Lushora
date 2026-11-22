@@ -3,7 +3,7 @@ import os, re, json, hmac, hashlib, base64, secrets
 from fastapi import FastAPI, Depends, HTTPException, Query, Header, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, update
 from io import BytesIO
 from openpyxl import Workbook
 from fastapi.responses import StreamingResponse
@@ -17,6 +17,12 @@ try:
     from sqlalchemy import inspect as _inspect
     if engine.dialect.name == 'sqlite' and 'availability_config' not in [c['name'] for c in _inspect(engine).get_columns('providers')]:
         with engine.begin() as _conn: _conn.exec_driver_sql("ALTER TABLE providers ADD COLUMN availability_config TEXT DEFAULT '{}'")
+except Exception: pass
+# Add provider booking mutex version to older SQLite databases.
+try:
+    from sqlalchemy import inspect as _inspect
+    if engine.dialect.name == 'sqlite' and 'booking_lock_version' not in [col['name'] for col in _inspect(engine).get_columns('providers')]:
+        with engine.begin() as _conn: _conn.exec_driver_sql("ALTER TABLE providers ADD COLUMN booking_lock_version INTEGER NOT NULL DEFAULT 0")
 except Exception: pass
 app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and wellness discovery and booking MVP")
 # Configure production frontend origins through LUSHORA_CORS_ORIGINS (comma-separated).
@@ -535,6 +541,9 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     provider = db.query(models.Provider).filter(models.Provider.id == payload.provider_id).first()
     service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
     if not provider or not service: raise HTTPException(404, "Provider or service not found")
+    # Atomically update the provider lock row before overlap checks. This serializes
+    # competing booking writes on SQLite and obtains a row lock on PostgreSQL.
+    db.execute(update(models.Provider).where(models.Provider.id==provider.id).values(booking_lock_version=models.Provider.booking_lock_version+1))
     if payload.appointment_at <= datetime.now(): raise HTTPException(400, "Appointment must be in the future")
     # Enforce the provider's saved working hours, working days, closure dates and break
     # during booking creation (not only when the UI displays available slots).
