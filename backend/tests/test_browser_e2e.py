@@ -119,6 +119,34 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     assert browser.get_by_role("heading", name="LUSHORA").count() >= 1
 
 
+def test_guest_discovery_and_booking_request(browser, e2e_servers):
+    from datetime import date, timedelta
+    import json
+    import urllib.request
+
+    seed_request=urllib.request.Request(e2e_servers["api"]+"/api/admin/demo-seed",data=b"{}",headers={"Content-Type":"application/json"},method="POST")
+    with urllib.request.urlopen(seed_request,timeout=10) as response:
+        assert response.status==200
+
+    browser.goto(e2e_servers["web"]+"/")
+    browser.get_by_role("button",name="Salon",exact=True).click()
+    assert browser.get_by_text("Glow & Glam Salon",exact=True).count()==1
+    browser.get_by_role("button",name="Book",exact=True).first.click()
+
+    target=date.today()+timedelta(days=2)
+    while target.weekday()==6:
+        target+=timedelta(days=1)
+    date_input=browser.get_by_label("Appointment date")
+    date_input.fill(target.isoformat())
+    browser.get_by_text("Available time slots").wait_for(timeout=15000)
+    slot_buttons=browser.locator(".available-slot-list button")
+    assert slot_buttons.count()>0, "Demo provider should have available slots on the selected working day"
+    slot_buttons.first.click()
+    browser.get_by_label("Your name").fill("E2E Guest")
+    browser.get_by_label("Mobile number").fill("9876543002")
+    browser.get_by_role("button",name="Send booking request").click()
+    browser.get_by_text("Your booking request has been received",exact=False).wait_for(timeout=15000)
+
 def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.goto(e2e_servers["web"] + "/business/login")
     browser.get_by_role("button", name="Create a business account").click()
