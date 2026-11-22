@@ -557,7 +557,7 @@ def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, wind
         entry = db.query(models.AuthRateLimitEntry).filter(
             models.AuthRateLimitEntry.scope == scope,
             models.AuthRateLimitEntry.identifier_hash == key
-        ).first()
+        ).populate_existing().first()
     if entry.blocked_until and entry.blocked_until > now:
         db.commit()
         return False, max(1, int((entry.blocked_until - now).total_seconds()))
