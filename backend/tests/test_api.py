@@ -100,3 +100,19 @@ def test_notification_preferences_validate_and_opt_in_opt_out():
     assert opted.status_code==200 and opted.json()['sms_enabled'] is True and opted.json()['whatsapp_enabled'] is True
     opted_out=client.put('/api/me/notification-preferences',headers=headers,json={'sms_enabled':False})
     assert opted_out.status_code==200 and opted_out.json()['sms_enabled'] is False and opted_out.json()['whatsapp_enabled'] is True
+
+def test_provider_owner_can_register_multiple_categories_but_not_duplicate_category():
+    registration = client.post('/api/auth/register', json={'full_name':'Multi Category Provider','email':'multi-provider@example.com','phone':'9876543220','password':'StrongPass123','role':'provider'})
+    assert registration.status_code == 201
+    token = registration.json()['access_token']
+    headers = {'Authorization': f'Bearer {token}'}
+    salon = {'name':'Multi Beauty Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':'Salon listing'}
+    nail = {**salon,'category':'Nail Studio','description':'Nail listing'}
+    first = client.post('/api/provider/register',headers=headers,json=salon)
+    second = client.post('/api/provider/register',headers=headers,json=nail)
+    duplicate = client.post('/api/provider/register',headers=headers,json=salon)
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert duplicate.status_code == 409
+    rows = client.get('/api/providers').json()
+    assert len(rows) == 0  # Pending listings are not public
