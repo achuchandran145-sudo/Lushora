@@ -3,18 +3,15 @@ import './portal.css';
 
 const API = import.meta.env.VITE_LUSHORA_API || 'http://127.0.0.1:8000/api';
 async function apiFetch(url, options={}) {
-  const targets=[url];
-  try {
-    const parsed=new URL(url);
-    if(parsed.hostname==='127.0.0.1') { parsed.hostname='localhost'; targets.push(parsed.toString()); }
-    else if(parsed.hostname==='localhost') { parsed.hostname='127.0.0.1'; targets.push(parsed.toString()); }
-  } catch {}
+  const parsed = new URL(url);
+  const path = parsed.pathname + parsed.search;
+  const bases = [parsed.origin, 'http://127.0.0.1:8000', 'http://localhost:8000'];
   let lastError;
-  for(const target of [...new Set(targets)]) {
-    try { return await fetch(target, options); }
-    catch(error) { lastError=error; }
+  for (const base of [...new Set(bases)]) {
+    try { return await fetch(base + path, options); }
+    catch (error) { lastError = error; }
   }
-  throw lastError || new Error('API connection failed');
+  throw new Error('API network connection failed. Tried: ' + [...new Set(bases)].join(', ') + '. Last error: ' + (lastError?.message || 'unknown'));
 }
 const BRAND = 'LUSHORA';
 const Logo = () => <a className="lux-logo lux-home-logo" href="/" title="Go to LUSHORA Home"><span>✦</span><b>LUSHORA</b><small>BEAUTY · WELLNESS · SKIN</small></a>;
