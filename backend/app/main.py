@@ -29,10 +29,22 @@ except Exception: pass
 app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and wellness discovery and booking MVP")
 # Configure production frontend origins through LUSHORA_CORS_ORIGINS (comma-separated).
 _CORS_ORIGINS=[origin.strip().rstrip("/") for origin in os.getenv("LUSHORA_CORS_ORIGINS","").split(",") if origin.strip()]
-if os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() != "production":\n    _CORS_ORIGINS.extend(["http://localhost:5173","http://127.0.0.1:5173"])
+if os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() != "production":
+    _CORS_ORIGINS.extend(["http://localhost:5173","http://127.0.0.1:5173"])
 app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGINS)), allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?", allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()\n\ndef _is_production_environment() -> bool:\n    return os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() == "production"\n\ndef _validate_production_settings() -> None:\n    if not _is_production_environment():\n        return\n    if len(AUTH_SECRET) < 32 or AUTH_SECRET == b"development-only-change-this-secret":\n        raise RuntimeError("Production requires LUSHORA_AUTH_SECRET to be a strong secret of at least 32 bytes.")\n    if OTP_DEV_MODE if "OTP_DEV_MODE" in globals() else os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true":\n        raise RuntimeError("Production must disable development OTP mode (LUSHORA_OTP_DEV_MODE=false).")
+AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()
+
+def _is_production_environment() -> bool:
+    return os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() == "production"
+
+def _validate_production_settings() -> None:
+    if not _is_production_environment():
+        return
+    if len(AUTH_SECRET) < 32 or AUTH_SECRET == b"development-only-change-this-secret":
+        raise RuntimeError("Production requires LUSHORA_AUTH_SECRET to be a strong secret of at least 32 bytes.")
+    if OTP_DEV_MODE if "OTP_DEV_MODE" in globals() else os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true":
+        raise RuntimeError("Production must disable development OTP mode (LUSHORA_OTP_DEV_MODE=false).")
 TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
 LUSHORA_LOCAL_TZ = ZoneInfo('Asia/Kolkata')
 BOOKING_SLOT_STEP_MINUTES = 30
@@ -1052,6 +1064,8 @@ def admin_summary(db: Session = Depends(get_db), user: models.User = Depends(req
 
 @app.post("/api/admin/demo-seed")
 def seed_demo(db: Session = Depends(get_db)):
+    if _is_production_environment():
+        raise HTTPException(404, "Not found")
     if db.query(models.Provider).count(): return {"message": "Demo data already exists"}
     records = [
       ("Glow & Glam Salon", "Salon", "Coimbatore", "Vadavalli", "Hair, skin and grooming services", True, 4.8, [("Eyebrow Threading",40,10),("Basic Facial",699,60),("Haircut & Styling",299,30)]),
