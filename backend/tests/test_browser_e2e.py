@@ -71,7 +71,7 @@ def e2e_servers(tmp_path_factory):
         try:
             _wait_http(api_url + "/api/health", backend, backend_log)
             _wait_http(web_url, frontend, frontend_log)
-        yield {"api": api_url, "web": web_url}
+            yield {"api": api_url, "web": web_url}
         finally:
             frontend.terminate()
             backend.terminate()
