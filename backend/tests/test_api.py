@@ -509,3 +509,15 @@ def test_concurrent_booking_requests_do_not_double_book_same_time():
         responses=list(pool.map(lambda _:submit(),range(2)))
     statuses=sorted(r.status_code for r in responses)
     assert statuses==[201,409], [r.status_code for r in responses]
+
+
+def test_booking_rejects_non_slot_aligned_and_timezone_offset_times():
+    client.post('/api/admin/demo-seed')
+    provider=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()[0]
+    service=provider['services'][0]
+    day=(datetime.now()+timedelta(days=21)).date()
+    base=datetime.combine(day,datetime.strptime('10:00','%H:%M').time())
+    payload={'customer_name':'Slot Validation','customer_phone':'9876543315','provider_id':provider['id'],'service_id':service['id'],'appointment_at':(base+timedelta(minutes=5)).isoformat(),'notes':''}
+    assert client.post('/api/bookings',json=payload).status_code==400
+    payload['appointment_at']=base.isoformat()+'+05:30'
+    assert client.post('/api/bookings',json=payload).status_code==400
