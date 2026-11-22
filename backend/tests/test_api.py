@@ -578,3 +578,22 @@ def test_customer_waitlist_create_list_duplicate_cancel_and_owner_scope():
     stranger=client.delete(f"/api/customer/me/waitlist/{created.json()['id']}",headers=ho);assert stranger.status_code==404
     cancelled=client.delete(f"/api/customer/me/waitlist/{created.json()['id']}",headers=h);assert cancelled.status_code==200
     assert client.delete(f"/api/customer/me/waitlist/{created.json()['id']}",headers=h).status_code==400
+
+
+def test_cancellation_policy_hook_and_provider_policy_validation():
+    from app import models
+    from app.database import get_db
+    client.post('/api/admin/demo-seed')
+    provider=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()[0];service=provider['services'][0]
+    customer=client.post('/api/auth/register',json={'full_name':'Policy Customer','email':'policy-customer@example.com','phone':'9876543321','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    day=(datetime.now()+timedelta(days=2)).date();appointment=datetime.combine(day,datetime.strptime('10:00','%H:%M').time())
+    payload={'customer_name':'Policy Customer','customer_phone':'9876543321','provider_id':provider['id'],'service_id':service['id'],'appointment_at':appointment.isoformat(),'notes':''}
+    booking=client.post('/api/bookings',headers=headers,json=payload);assert booking.status_code==201
+    db=next(get_db())
+    try:
+        p=db.query(models.Provider).filter(models.Provider.id==provider['id']).first()
+        cfg=json.loads(p.availability_config or '{}');cfg['cancellation_min_hours']=48;cfg['cancellation_fee_percent']=20;p.availability_config=json.dumps(cfg);db.commit()
+    finally:db.close()
+    result=client.patch(f"/api/bookings/{booking.json()['id']}/status?status=cancelled",headers=headers)
+    assert result.status_code==200 and result.json()['cancellation_policy']['fee_applies'] is True and result.json()['cancellation_policy']['fee_percent']==20
