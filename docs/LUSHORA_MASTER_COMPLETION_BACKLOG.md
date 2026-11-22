@@ -8,8 +8,9 @@ Mark a task DONE only after implementation, automated tests, frontend production
 ## Phase 0 — Existing foundation audit (REMEDIATION IN PROGRESS)
 Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires green CI on the latest branch head plus the checklist evidence below.
 
-**Final verification snapshot:** commit `e8abe407dd4f97023dea4fa41439c3b17b11ec83` has a successful required CI run:
-https://github.com/achuchandran145-sudo/Lushora/actions/runs/45039840125
+**Final verification snapshot:** latest branch head `a3fafbe8b872d8e1ce7aa2ebc879427c454eaf07` has successful required CI runs:
+https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040487482
+https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040482252
 
 Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly environment-dependent release validations.
 
@@ -83,7 +84,7 @@ Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly env
 - [x] Frontend production build: PASS.
 - [x] npm audit: 0 vulnerabilities.
 - [x] pip-audit: no known vulnerabilities.
-- [x] GitHub Actions final-commit CI: PASS — run https://github.com/achuchandran145-sudo/Lushora/actions/runs/45039840125 for commit e8abe407dd4f97023dea4fa41439c3b17b11ec83.
+- [x] GitHub Actions latest-head CI: PASS — runs https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040487482 and https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040482252 for commit a3fafbe8b872d8e1ce7aa2ebc879427c454eaf07.
 - [x] Gitleaks repository and history scan: PASS — successful CI step `Scan repository and Git history for secrets`.
 - [x] PostgreSQL 16 migration and backup/restore CI drill: PASS — successful CI step `Run PostgreSQL migration and backup/restore drill`.
 - [x] Backend tests, Playwright/browser E2E, Python audit, operational scripts, npm audit and frontend build: PASS in the successful final-commit CI run.
