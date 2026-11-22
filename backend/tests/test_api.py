@@ -225,7 +225,7 @@ def test_logout_revokes_existing_access_token():
     assert client.get('/api/auth/me',headers=headers).status_code==200
     assert client.post('/api/auth/logout',headers=headers).status_code==200
     assert client.get('/api/auth/me',headers=headers).status_code==401
-    re_login=client.post('/api/auth/login',json={'email':'logout-user@example.com','password':'StrongPass123!'})
+    re_login=client.post('/api/auth/login',json={'email':'logout-user@example.com','password':'StrongPass123!!'})
     assert re_login.status_code==200
     assert client.get('/api/auth/me',headers={'Authorization':f"Bearer {re_login.json()['access_token']}"}).status_code==200
 
