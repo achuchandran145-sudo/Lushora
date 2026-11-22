@@ -474,3 +474,23 @@ def test_provider_staff_management_validation_and_owner_isolation():
     assert len(client.get('/api/provider/me/staff',headers=h1).json())==1
     assert client.delete(f'/api/provider/me/staff/{staff_id}',headers=h1).status_code==200
     assert client.get('/api/provider/me/staff',headers=h1).json()==[]
+
+
+def test_provider_branch_management_validation_and_owner_isolation():
+    r1=client.post('/api/auth/register',json={'full_name':'Branch Owner One','email':'branch-owner-one@example.com','phone':'9876543311','password':'StrongPass123','role':'provider'})
+    r2=client.post('/api/auth/register',json={'full_name':'Branch Owner Two','email':'branch-owner-two@example.com','phone':'9876543312','password':'StrongPass123','role':'provider'})
+    h1={'Authorization':f"Bearer {r1.json()['access_token']}"};h2={'Authorization':f"Bearer {r2.json()['access_token']}"}
+    for headers,name,city,loc in [(h1,'Branch Provider One','Coimbatore','Vadavalli'),(h2,'Branch Provider Two','Chennai','Adyar')]:
+        assert client.post('/api/provider/register',headers=headers,json={'name':name,'category':'Salon','city':city,'locality':loc,'description':''}).status_code==201
+    created=client.post('/api/provider/me/branches',headers=h1,json={'branch_name':'Downtown','city':'Coimbatore','locality':'RS Puram','address':'12 Main Road','phone':'9876543313'})
+    assert created.status_code==201
+    branch_id=created.json()['id']
+    assert client.get('/api/provider/me/branches',headers=h1).json()[0]['branch_name']=='Downtown'
+    updated=client.patch(f'/api/provider/me/branches/{branch_id}',headers=h1,json={'city':'Chennai','is_active':False})
+    assert updated.status_code==200 and updated.json()['city']=='Chennai' and updated.json()['is_active'] is False
+    invalid=client.post('/api/provider/me/branches',headers=h1,json={'branch_name':'Bad City','city':'Madurai','locality':'Central','address':'Road'})
+    assert invalid.status_code==400
+    foreign=client.delete(f'/api/provider/me/branches/{branch_id}',headers=h2)
+    assert foreign.status_code==404
+    assert client.delete(f'/api/provider/me/branches/{branch_id}',headers=h1).status_code==200
+    assert client.get('/api/provider/me/branches',headers=h1).json()==[]
