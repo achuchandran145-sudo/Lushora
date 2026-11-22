@@ -523,9 +523,22 @@ def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, wind
         models.AuthRateLimitEntry.identifier_hash == key
     ).first()
     if entry is None:
-        entry = models.AuthRateLimitEntry(scope=scope, identifier_hash=key, window_started_at=now, attempts=0)
-        db.add(entry)
-        db.flush()
+        if consume and db.bind.dialect.name in {"sqlite", "postgresql"}:
+            if db.bind.dialect.name == "sqlite":
+                from sqlalchemy.dialects.sqlite import insert as dialect_insert
+            else:
+                from sqlalchemy.dialects.postgresql import insert as dialect_insert
+            db.execute(dialect_insert(models.AuthRateLimitEntry).values(
+                scope=scope, identifier_hash=key, window_started_at=now, attempts=0
+            ).on_conflict_do_nothing(index_elements=["scope", "identifier_hash"]))
+            entry = db.query(models.AuthRateLimitEntry).filter(
+                models.AuthRateLimitEntry.scope == scope,
+                models.AuthRateLimitEntry.identifier_hash == key
+            ).first()
+        else:
+            entry = models.AuthRateLimitEntry(scope=scope, identifier_hash=key, window_started_at=now, attempts=0)
+            db.add(entry)
+            db.flush()
     if consume:
         # Atomic row update: database row locking protects concurrent requests.
         # Production is constrained to PostgreSQL, which supports the locking semantics.
@@ -552,7 +565,8 @@ def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, wind
         entry.window_started_at = now
         entry.attempts = 0
         entry.blocked_until = None
-    if entry.attempts >= limit:
+    threshold_reached = entry.attempts > limit if consume else entry.attempts >= limit
+    if threshold_reached:
         entry.blocked_until = now + timedelta(seconds=window_seconds)
         db.commit()
         return False, window_seconds
