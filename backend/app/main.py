@@ -144,7 +144,7 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
     return {"id":payment.id,"booking_id":payment.booking_id,"amount_inr":payment.amount_inr,"status":payment.status,"gateway":payment.gateway,"message":"Payment record created; gateway not configured, no money collected"}
 
 @app.get("/api/payments/me")
-def my_payments(user:models.User=Depends(get_current_user),db:Session=Depends(get_db)):
+def my_payments(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
     return db.query(models.Payment).filter(models.Payment.customer_user_id==user.id).order_by(models.Payment.created_at.desc()).all()
 
 @app.post("/api/v2/admin/subscriptions",status_code=201)
