@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 import os, re, json, hmac, hashlib, base64, secrets
-from fastapi import FastAPI, Depends, HTTPException, Query, Header
+from fastapi import FastAPI, Depends, HTTPException, Query, Header, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
@@ -1063,7 +1063,7 @@ MAX_PORTFOLIO_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_PORTFOLIO_FORMATS = {"JPEG", "PNG", "WEBP"}
 
 @app.post("/api/provider/me/portfolio", status_code=201)
-async def upload_provider_portfolio_image(file: UploadFile = File(...), caption: str = "", user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+async def upload_provider_portfolio_image(file: UploadFile = File(...), caption: str = Form(default=""), user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
     if not provider: raise HTTPException(404,"Business profile not found")
     if len(caption.strip())>240: raise HTTPException(400,"Caption must be 240 characters or fewer")
