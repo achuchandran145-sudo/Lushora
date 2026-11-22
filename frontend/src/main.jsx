@@ -220,7 +220,7 @@ function App() {
   const scrollToExplore = () => document.getElementById('discover')?.scrollIntoView({ behavior: 'smooth' });
   return <>
     <header className="site-header">
-      <a className="wordmark" href="#top" aria-label="LUSHORA Beauty Wellness Skin home"><span className="mark">✿</span><span>LUSHORA</span><small>BEAUTY · WELLNESS · SKIN</small></a>
+      <a className="wordmark" href="#top"><span className="mark">✿</span><span>LUSHORA</span><small>BEAUTY · WELLNESS · SKIN</small></a>
       <nav className="main-nav"><a href="#discover">Discover</a><a href="#journal">The Journal</a><a href="#business">For businesses</a></nav>
       <div className="header-actions"><button className="text-button" onClick={() => document.getElementById('business')?.scrollIntoView({ behavior: 'smooth' })}>List your business</button>{account && <button className="text-button" onClick={openDashboard}>Dashboard</button>}<button className="login-button" onClick={() => { if (account) { localStorage.removeItem('lushora-account'); setAccount(null); setNotice('You have signed out.'); } else { window.location.href = '/customer/login'; } }}>{account ? 'Sign out' : 'Log in'} <span>↗</span></button></div>
     </header>
