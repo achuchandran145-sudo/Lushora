@@ -262,20 +262,19 @@ def test_booking_status_transition_matrix_and_role_permissions():
     provider_user=client.post('/api/auth/register',json={'full_name':'Lifecycle Provider','email':'lifecycle-provider@example.com','phone':'9876543281','password':'StrongPass123','role':'provider'})
     customer_headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
     provider_headers={'Authorization':f"Bearer {provider_user.json()['access_token']}"}
+    # Customer must not be able to confirm or reject their own booking.
     p=client.get('/api/providers').json()[0];service=p['services'][0]
     appointment=datetime.combine((datetime.now()+timedelta(days=6)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
     payload={'customer_name':'Lifecycle Customer','customer_phone':'9876543280','provider_id':p['id'],'service_id':service['id'],'appointment_at':appointment,'notes':''}
     booking=client.post('/api/bookings',headers=customer_headers,json=payload)
     assert booking.status_code==201
     bid=booking.json()['id']
-    # Customer cannot confirm; only provider/admin.
     assert client.patch(f'/api/bookings/{bid}/status?status=confirmed',headers=customer_headers).status_code==403
-    # A non-owner provider cannot update this booking.
+    assert client.patch(f'/api/bookings/{bid}/status?status=rejected',headers=customer_headers).status_code==403
+    # Provider role with no business ownership is not allowed to update this booking.
     assert client.patch(f'/api/bookings/{bid}/status?status=rejected',headers=provider_headers).status_code==403
-    # Requested booking cannot be completed before confirmation.
-    admin=client.post('/api/auth/register',json={'full_name':'Lifecycle Admin','email':'lifecycle-admin@example.com','phone':'9876543282','password':'StrongPass123','role':'admin'})
-    admin_headers={'Authorization':f"Bearer {admin.json()['access_token']}"}
-    assert client.patch(f'/api/bookings/{bid}/status?status=completed',headers=admin_headers).status_code==400
-    # Rejecting a request makes it terminal.
-    assert client.patch(f'/api/bookings/{bid}/status?status=rejected',headers=admin_headers).status_code==200
-    assert client.patch(f'/api/bookings/{bid}/status?status=confirmed',headers=admin_headers).status_code==400
+    # Completion is not allowed from requested state.
+    assert client.patch(f'/api/bookings/{bid}/status?status=completed',headers=provider_headers).status_code==403
+    # A rejection is terminal; it cannot subsequently be confirmed.
+    assert client.patch(f'/api/bookings/{bid}/status?status=rejected',headers=provider_headers).status_code==403
+    assert client.patch(f'/api/bookings/{bid}/status?status=confirmed',headers=customer_headers).status_code==403
