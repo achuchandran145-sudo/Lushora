@@ -1,4 +1,7 @@
-import json, hmac, hashlib, os
+import json, hmac, hashlib, os, tempfile
+from pathlib import Path
+from alembic.config import Config
+from alembic import command
 import pytest
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
@@ -11,6 +14,23 @@ client = TestClient(app)
 def setup_function():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+
+def test_alembic_initial_migration_creates_schema_and_version(tmp_path, monkeypatch):
+    db_path=tmp_path/'migration-smoke.db'
+    monkeypatch.setenv('LUSHORA_DATABASE_URL',f'sqlite:///{db_path.as_posix()}')
+    config=Config(str(Path(__file__).resolve().parents[1]/'alembic.ini'))
+    command.upgrade(config,'head')
+    import sqlite3
+    connection=sqlite3.connect(db_path)
+    try:
+        tables={row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert 'users' in tables
+        assert 'auth_rate_limit_entries' in tables
+        assert 'alembic_version' in tables
+        revision=connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        assert revision=='0001_initial'
+    finally:
+        connection.close()
 
 def test_production_settings_reject_weak_auth_secret(monkeypatch):
     import app.main as main_module
