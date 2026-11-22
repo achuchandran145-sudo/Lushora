@@ -454,6 +454,8 @@ def update_booking_status(booking_id: int, status: str = Query(...), user: model
     if status == "confirmed" and booking.status != "requested": raise HTTPException(400, "Only requested bookings can be confirmed")
     if status == "rejected" and booking.status != "requested": raise HTTPException(400, "Only requested bookings can be rejected")
     if status == "cancelled" and booking.status not in {"requested", "confirmed"}: raise HTTPException(400, "This booking cannot be cancelled")
+    if status == "cancelled" and is_customer_owner and booking.status not in {"requested", "confirmed"}: raise HTTPException(400, "Customers can cancel only requested or confirmed bookings")
+    if status == "cancelled" and is_provider_owner and booking.status not in {"requested", "confirmed"}: raise HTTPException(400, "Providers can cancel only requested or confirmed bookings")
     booking.status = status
     if booking.customer_user_id:
         status_title={"confirmed":"Booking confirmed","rejected":"Booking declined","cancelled":"Booking cancelled","completed":"Booking completed"}.get(status,"Booking update")
