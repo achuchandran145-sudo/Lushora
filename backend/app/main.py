@@ -591,7 +591,6 @@ def customer_otp_verify(payload: dict, request: Request, db: Session = Depends(g
         raise HTTPException(401, "Incorrect OTP")
     challenge.consumed = True
     _clear_auth_limit(db, "otp_verify_phone_hour", phone)
-    _clear_auth_limit(db, "otp_verify_ip_hour", ip)
     user = db.query(models.User).filter(models.User.phone == phone, models.User.role == "customer").first()
     if not user:
         placeholder_email = phone.replace("+", "") + "@customer.lushora.local"
@@ -627,7 +626,6 @@ def login(payload: schemas.LoginIn, request: Request, db: Session = Depends(get_
         _consume_auth_limit(db, "login_ip_failures", ip, 20, 900)
         raise HTTPException(401, "Email or password is incorrect")
     _clear_auth_limit(db, "login_email_failures", email)
-    _clear_auth_limit(db, "login_ip_failures", ip)
     return {"access_token": _make_token(user.id), "user": user}
 
 @app.get("/api/auth/me", response_model=schemas.UserOut)
