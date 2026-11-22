@@ -686,10 +686,18 @@ async def upload_verification_document(doc_type: str, file: UploadFile = File(..
     data=await file.read(MAX_DOC_BYTES+1)
     if len(data)>MAX_DOC_BYTES: raise HTTPException(413,"Document must be 8 MB or smaller")
     suffix={"application/pdf":".pdf","image/jpeg":".jpg","image/png":".png"}[file.content_type]
-    safe_name=f"{user.id}_{doc_type}_{uuid.uuid4().hex}{suffix}"
-    (VERIFICATION_UPLOAD_DIR/safe_name).write_bytes(data)
-    setattr(row,doc_type+"_document_name",safe_name);db.commit()
-    return {"uploaded":True,"document_type":doc_type,"message":"Document uploaded to private local storage"}
+    # Store verification files in a private, searchable business/city/locality folder.
+    def _safe_folder(value: str) -> str:
+        cleaned=re.sub(r"[^A-Za-z0-9._-]+","_",value.strip()).strip("._-")
+        return cleaned[:80] or "unknown"
+    folder=VERIFICATION_UPLOAD_DIR/_safe_folder(row.business_name)/_safe_folder(row.city)/_safe_folder(row.locality)/f"account_{user.id}_verification_{row.id}"
+    folder.mkdir(parents=True,exist_ok=True)
+    safe_name=f"{doc_type}_{uuid.uuid4().hex}{suffix}"
+    (folder/safe_name).write_bytes(data)
+    # Persist relative private-storage path for authenticated document retrieval.
+    stored_path=str((folder/safe_name).relative_to(VERIFICATION_UPLOAD_DIR))
+    setattr(row,doc_type+"_document_name",stored_path);db.commit()
+    return {"uploaded":True,"document_type":doc_type,"message":"Document uploaded to private business verification folder"}
 
 @app.get("/api/v2/admin/verifications")
 def admin_verification_list(status: str = "submitted", user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
@@ -702,15 +710,18 @@ def admin_get_verification_document(verification_id:int,doc_type:str,user:models
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
     if not row: raise HTTPException(404,"Verification not found")
     filename=getattr(row,doc_type+"_document_name","")
-    if not filename or not (VERIFICATION_UPLOAD_DIR/filename).exists(): raise HTTPException(404,"Document not uploaded")
-    return FileResponse(VERIFICATION_UPLOAD_DIR/filename,filename=doc_type+"_verification_document",media_type="application/octet-stream")
+    if not filename: raise HTTPException(404,"Document not uploaded")
+    target=(VERIFICATION_UPLOAD_DIR/filename).resolve()
+    if VERIFICATION_UPLOAD_DIR not in target.parents or not target.is_file(): raise HTTPException(404,"Document not uploaded")
+    return FileResponse(target,filename=doc_type+"_verification_document",media_type="application/octet-stream")
 
 @app.patch("/api/v2/admin/verifications/{verification_id}")
 def admin_review_verification(verification_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
     if not row: raise HTTPException(404,"Verification not found")
     action=str(payload.get("status","")).lower();notes=str(payload.get("admin_notes","")).strip()
-    if action not in {"approved","rejected","under_review"}: raise HTTPException(400,"Status must be approved, rejected or under_review")
+    if action=="pending": action="submitted"
+    if action not in {"approved","rejected","under_review","submitted"}: raise HTTPException(400,"Status must be approved, rejected, under_review or submitted")
     if action=="approved" and (not row.aadhaar_document_name or not row.pan_document_name or not row.business_document_name): raise HTTPException(400,"All three verification documents must be uploaded before approval")
     row.status=action;row.admin_notes=notes;row.reviewed_at=datetime.utcnow() if action in {"approved","rejected"} else None
     if action=="approved":
@@ -722,6 +733,27 @@ def admin_review_verification(verification_id:int,payload:dict,user:models.User=
             existing=db.query(models.Provider).filter(models.Provider.owner_user_id==row.owner_user_id,models.Provider.category==cat).first()
             if not existing: db.add(models.Provider(owner_user_id=row.owner_user_id,approval_status="approved",name=row.business_name,category=cat,city=row.city,locality=row.locality,description=row.address,verified=True))
     db.commit();return {"id":row.id,"status":row.status,"message":"Verification review updated"}
+
+@app.delete("/api/v2/admin/verifications/{verification_id}")
+def admin_delete_verification(verification_id:int,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
+    if not row: raise HTTPException(404,"Verification not found")
+    owner_id=row.owner_user_id
+    # Remove verification files only after resolving paths within the private storage root.
+    for doc_type in ("aadhaar","pan","business"):
+        stored=getattr(row,doc_type+"_document_name","")
+        if stored:
+            target=(VERIFICATION_UPLOAD_DIR/stored).resolve()
+            if VERIFICATION_UPLOAD_DIR in target.parents and target.is_file():
+                try: target.unlink()
+                except OSError: pass
+    # Remove provider listings created for this business owner/category, including their services.
+    providers=db.query(models.Provider).filter(models.Provider.owner_user_id==owner_id,models.Provider.name==row.business_name,models.Provider.city==row.city,models.Provider.locality==row.locality).all()
+    for provider in providers:
+        db.query(models.Service).filter(models.Service.provider_id==provider.id).delete(synchronize_session=False)
+        db.delete(provider)
+    db.delete(row);db.commit()
+    return {"id":verification_id,"deleted":True,"message":"Business verification and associated private documents deleted"}
 
 @app.get("/api/v2/provider/verification/me")
 def provider_verification_me(user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
