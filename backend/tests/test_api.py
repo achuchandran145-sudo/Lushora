@@ -215,3 +215,42 @@ def test_booking_cancellation_requires_owner_and_allowed_state():
     cancelled=client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=headers)
     assert cancelled.status_code==200 and cancelled.json()['status']=='cancelled'
     assert client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=headers).status_code==400
+
+def test_booking_enforces_provider_schedule_break_and_closed_dates():
+    from app.database import get_db
+    from app import models
+    provider_reg=client.post('/api/auth/register',json={'full_name':'Schedule Provider','email':'schedule-provider@example.com','phone':'9876543270','password':'StrongPass123','role':'provider'})
+    provider_headers={'Authorization':f"Bearer {provider_reg.json()['access_token']}"}
+    listing=client.post('/api/provider/register',headers=provider_headers,json={'name':'Schedule Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':'Test'})
+    assert listing.status_code==201
+    db=next(get_db())
+    try:
+        owner=db.query(models.User).filter(models.User.email=='schedule-provider@example.com').first()
+        provider=db.query(models.Provider).filter(models.Provider.owner_user_id==owner.id).first()
+        service=models.Service(provider_id=provider.id,name='Schedule Service',price_inr=500,duration_minutes=60)
+        db.add(service);db.flush();provider_id=provider.id;service_id=service.id
+        day=(datetime.now()+timedelta(days=7)).date()
+        provider.availability_config='{"working_days":[],"start_time":"09:00","end_time":"18:00","break_start":"13:00","break_end":"14:00","closed_dates":[]}'
+        db.commit()
+    finally: db.close()
+    payload={'customer_name':'Schedule Customer','customer_phone':'9876543271','provider_id':provider_id,'service_id':service_id,'appointment_at':datetime.combine(day,datetime.strptime('10:00','%H:%M').time()).isoformat(),'notes':''}
+    assert client.post('/api/bookings',json=payload).status_code==400
+    db=next(get_db())
+    try:
+        provider=db.query(models.Provider).filter(models.Provider.id==provider_id).first()
+        provider.availability_config=json.dumps({'working_days':[day.weekday()],'start_time':'09:00','end_time':'18:00','break_start':'13:00','break_end':'14:00','closed_dates':[day.isoformat()]})
+        db.commit()
+    finally: db.close()
+    assert client.post('/api/bookings',json=payload).status_code==400
+    db=next(get_db())
+    try:
+        provider=db.query(models.Provider).filter(models.Provider.id==provider_id).first()
+        provider.availability_config=json.dumps({'working_days':[day.weekday()],'start_time':'09:00','end_time':'18:00','break_start':'13:00','break_end':'14:00','closed_dates':[]})
+        db.commit()
+    finally: db.close()
+    payload['appointment_at']=datetime.combine(day,datetime.strptime('13:30','%H:%M').time()).isoformat()
+    assert client.post('/api/bookings',json=payload).status_code==400
+    payload['appointment_at']=datetime.combine(day,datetime.strptime('17:30','%H:%M').time()).isoformat()
+    assert client.post('/api/bookings',json=payload).status_code==400
+    payload['appointment_at']=datetime.combine(day,datetime.strptime('10:00','%H:%M').time()).isoformat()
+    assert client.post('/api/bookings',json=payload).status_code==201
