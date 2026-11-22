@@ -597,3 +597,13 @@ def test_cancellation_policy_hook_and_provider_policy_validation():
     finally:db.close()
     result=client.patch(f"/api/bookings/{booking.json()['id']}/status?status=cancelled",headers=headers)
     assert result.status_code==200 and result.json()['cancellation_policy']['fee_applies'] is True and result.json()['cancellation_policy']['fee_percent']==20
+
+
+def test_provider_can_configure_cancellation_policy_with_bounds():
+    reg=client.post('/api/auth/register',json={'full_name':'Cancel Policy Provider','email':'cancel-policy-provider@example.com','phone':'9876543322','password':'StrongPass123','role':'provider'})
+    h={'Authorization':f"Bearer {reg.json()['access_token']}"}
+    listing=client.post('/api/provider/register',headers=h,json={'name':'Cancel Policy Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':'Policy test'});assert listing.status_code==201
+    payload={'working_days':[0,1,2,3,4,5,6],'start_time':'09:00','end_time':'18:00','break_start':'','break_end':'','closed_dates':[],'cancellation_min_hours':24,'cancellation_fee_percent':25}
+    valid=client.put('/api/provider/me/availability',headers=h,json=payload);assert valid.status_code==200 and valid.json()['cancellation_fee_percent']==25
+    assert client.put('/api/provider/me/availability',headers=h,json={**payload,'cancellation_min_hours':169}).status_code==400
+    assert client.put('/api/provider/me/availability',headers=h,json={**payload,'cancellation_fee_percent':101}).status_code==400
