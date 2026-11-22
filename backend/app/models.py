@@ -56,6 +56,7 @@ class Booking(Base):
     status: Mapped[str] = mapped_column(String(30), default="requested")
     notes: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class OTPChallenge(Base):
