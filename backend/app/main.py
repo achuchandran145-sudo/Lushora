@@ -495,18 +495,69 @@ def _normalize_phone(phone: str) -> str:
     return "+91" + digits
 
 
+def _rate_limit_identifier(identifier: str) -> str:
+    return hmac.new(AUTH_SECRET, str(identifier).strip().lower().encode(), hashlib.sha256).hexdigest()
+
+def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, window_seconds: int, *, consume: bool = False):
+    now = datetime.utcnow()
+    key = _rate_limit_identifier(identifier)
+    entry = db.query(models.AuthRateLimitEntry).filter(
+        models.AuthRateLimitEntry.scope == scope,
+        models.AuthRateLimitEntry.identifier_hash == key
+    ).first()
+    if entry is None:
+        entry = models.AuthRateLimitEntry(scope=scope, identifier_hash=key, window_started_at=now, attempts=0)
+        db.add(entry)
+        db.flush()
+    if entry.blocked_until and entry.blocked_until > now:
+        return False, max(1, int((entry.blocked_until - now).total_seconds()))
+    if now - entry.window_started_at >= timedelta(seconds=window_seconds):
+        entry.window_started_at = now
+        entry.attempts = 0
+        entry.blocked_until = None
+    if consume:
+        entry.attempts += 1
+        if entry.attempts > limit:
+            entry.blocked_until = now + timedelta(seconds=window_seconds)
+            db.commit()
+            return False, window_seconds
+        db.commit()
+    return True, 0
+
+def _check_auth_limit(db: Session, scope: str, identifier: str, limit: int, window_seconds: int):
+    allowed, retry_after = _rate_limit_state(db, scope, identifier, limit, window_seconds)
+    if not allowed:
+        raise HTTPException(429, "Too many authentication attempts. Please try again later.", headers={"Retry-After": str(retry_after)})
+
+def _consume_auth_limit(db: Session, scope: str, identifier: str, limit: int, window_seconds: int):
+    allowed, retry_after = _rate_limit_state(db, scope, identifier, limit, window_seconds, consume=True)
+    if not allowed:
+        raise HTTPException(429, "Too many authentication attempts. Please try again later.", headers={"Retry-After": str(retry_after)})
+
+def _clear_auth_limit(db: Session, scope: str, identifier: str):
+    key = _rate_limit_identifier(identifier)
+    db.query(models.AuthRateLimitEntry).filter(
+        models.AuthRateLimitEntry.scope == scope,
+        models.AuthRateLimitEntry.identifier_hash == key
+    ).delete(synchronize_session=False)
+    db.commit()
+
 def _otp_digest(phone: str, otp: str) -> str:
     return hashlib.sha256((phone + ":" + otp + ":" + os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret")).encode()).hexdigest()
 
 
 @app.post("/api/v2/customer/otp/request")
-def customer_otp_request(payload: dict, db: Session = Depends(get_db)):
+def customer_otp_request(payload: dict, request: Request, db: Session = Depends(get_db)):
     phone = _normalize_phone(str(payload.get("phone", "")))
+    ip = request.client.host if request.client else "unknown"
     if not OTP_DEV_MODE:
         raise HTTPException(503, "SMS OTP delivery is not configured yet. Configure an SMS provider before enabling production customer login.")
+    _consume_auth_limit(db, "otp_request_phone_hour", phone, 3, 3600)
+    _consume_auth_limit(db, "otp_request_phone_day", phone, 5, 86400)
+    _consume_auth_limit(db, "otp_request_ip_hour", ip, 10, 3600)
     recent = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.created_at > datetime.utcnow() - timedelta(seconds=60)).first()
     if recent:
-        raise HTTPException(429, "Please wait 60 seconds before requesting another OTP")
+        raise HTTPException(429, "Please wait 60 seconds before requesting another OTP", headers={"Retry-After": "60"})
     code = f"{secrets.randbelow(1000000):06d}"
     db.add(models.OTPChallenge(phone=phone, code_hash=_otp_digest(phone, code), expires_at=datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)))
     db.commit()
@@ -514,9 +565,12 @@ def customer_otp_request(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/api/v2/customer/otp/verify")
-def customer_otp_verify(payload: dict, db: Session = Depends(get_db)):
+def customer_otp_verify(payload: dict, request: Request, db: Session = Depends(get_db)):
     phone = _normalize_phone(str(payload.get("phone", "")))
     otp = str(payload.get("otp", "")).strip()
+    ip = request.client.host if request.client else "unknown"
+    _check_auth_limit(db, "otp_verify_ip_hour", ip, 30, 3600)
+    _check_auth_limit(db, "otp_verify_phone_hour", phone, 10, 3600)
     if not re.fullmatch(r"\d{6}", otp):
         raise HTTPException(400, "Enter the 6-digit OTP")
     challenge = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.consumed == False).order_by(models.OTPChallenge.created_at.desc()).first()
@@ -528,8 +582,12 @@ def customer_otp_verify(payload: dict, db: Session = Depends(get_db)):
     challenge.attempts += 1
     if not hmac.compare_digest(challenge.code_hash, _otp_digest(phone, otp)):
         db.commit()
+        _consume_auth_limit(db, "otp_verify_phone_hour", phone, 10, 3600)
+        _consume_auth_limit(db, "otp_verify_ip_hour", ip, 30, 3600)
         raise HTTPException(401, "Incorrect OTP")
     challenge.consumed = True
+    _clear_auth_limit(db, "otp_verify_phone_hour", phone)
+    _clear_auth_limit(db, "otp_verify_ip_hour", ip)
     user = db.query(models.User).filter(models.User.phone == phone, models.User.role == "customer").first()
     if not user:
         placeholder_email = phone.replace("+", "") + "@customer.lushora.local"
@@ -541,8 +599,11 @@ def customer_otp_verify(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/register", response_model=schemas.TokenOut, status_code=201)
-def register(payload: schemas.RegisterIn, db: Session = Depends(get_db)):
+def register(payload: schemas.RegisterIn, request: Request, db: Session = Depends(get_db)):
     email = payload.email.strip().lower()
+    ip = request.client.host if request.client else "unknown"
+    _consume_auth_limit(db, "register_email_hour", email, 5, 3600)
+    _consume_auth_limit(db, "register_ip_hour", ip, 20, 3600)
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email): raise HTTPException(400, "Valid email is required")
     if payload.role not in ["customer", "provider"]: raise HTTPException(400, "Role must be customer or provider")
     if db.query(models.User).filter(models.User.email == email).first(): raise HTTPException(409, "Email already registered")
@@ -551,10 +612,18 @@ def register(payload: schemas.RegisterIn, db: Session = Depends(get_db)):
     return {"access_token": _make_token(user.id), "user": user}
 
 @app.post("/api/auth/login", response_model=schemas.TokenOut)
-def login(payload: schemas.LoginIn, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == payload.email.strip().lower()).first()
+def login(payload: schemas.LoginIn, request: Request, db: Session = Depends(get_db)):
+    email = payload.email.strip().lower()
+    ip = request.client.host if request.client else "unknown"
+    _check_auth_limit(db, "login_email_failures", email, 5, 900)
+    _check_auth_limit(db, "login_ip_failures", ip, 20, 900)
+    user = db.query(models.User).filter(models.User.email == email).first()
     if not user or not _password_verify(payload.password, user.password_hash) or not user.is_active:
+        _consume_auth_limit(db, "login_email_failures", email, 5, 900)
+        _consume_auth_limit(db, "login_ip_failures", ip, 20, 900)
         raise HTTPException(401, "Email or password is incorrect")
+    _clear_auth_limit(db, "login_email_failures", email)
+    _clear_auth_limit(db, "login_ip_failures", ip)
     return {"access_token": _make_token(user.id), "user": user}
 
 @app.get("/api/auth/me", response_model=schemas.UserOut)
