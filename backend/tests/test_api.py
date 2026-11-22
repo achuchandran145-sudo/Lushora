@@ -276,6 +276,7 @@ def test_expired_and_tampered_tokens_are_rejected():
         db.close()
 
 def test_failed_login_creates_privacy_preserving_audit_event_and_admin_route_is_role_protected():
+    import app.main as main_module
     client.post('/api/auth/register',json={'full_name':'Audit User','email':'audit-user@example.com','phone':'9876543342','password':'StrongPass123!','role':'customer'})
     assert client.post('/api/auth/login',json={'email':'audit-user@example.com','password':'wrong-password'}).status_code==401
     customer=client.post('/api/auth/login',json={'email':'audit-user@example.com','password':'StrongPass123!'})
