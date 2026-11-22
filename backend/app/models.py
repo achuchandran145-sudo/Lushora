@@ -166,9 +166,9 @@ class NotificationPreference(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
     in_app_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    push_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    whatsapp_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    sms_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    push_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    whatsapp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    sms_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class NotificationDelivery(Base):
