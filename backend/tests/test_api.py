@@ -38,6 +38,13 @@ def test_production_settings_reject_missing_cors_origins(monkeypatch):
         main_module._validate_production_settings()
 
 
+def test_admin_bootstrap_rejects_weak_password(monkeypatch):
+    import app.main as main_module
+    monkeypatch.setenv('LUSHORA_ADMIN_EMAIL','admin-weak@example.com')
+    monkeypatch.setenv('LUSHORA_ADMIN_PASSWORD','WeakPassword123')
+    with pytest.raises(RuntimeError,match='LUSHORA_ADMIN_PASSWORD'):
+        main_module.bootstrap_admin_from_environment()
+
 def test_demo_seed_disabled_in_production(monkeypatch):
     monkeypatch.setenv('APP_ENV', 'production')
     assert client.post('/api/admin/demo-seed').status_code == 404
