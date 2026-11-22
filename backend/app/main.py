@@ -713,6 +713,26 @@ def provider_bookings(user: models.User = Depends(require_role("provider")), db:
     if not provider: raise HTTPException(404, "Business profile not found")
     return db.query(models.Booking).filter(models.Booking.provider_id == provider.id).order_by(models.Booking.appointment_at.asc()).all()
 
+@app.patch("/api/provider/me/profile")
+def update_provider_profile(payload: dict, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider_id = int(payload.get("provider_id", 0)) if payload.get("provider_id") else None
+    q = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id)
+    if provider_id: q = q.filter(models.Provider.id == provider_id)
+    provider = q.first()
+    if not provider: raise HTTPException(404, "Business profile not found for this account")
+    name = str(payload.get("name", provider.name)).strip()
+    description = str(payload.get("description", provider.description)).strip()
+    city = str(payload.get("city", provider.city)).strip()
+    locality = str(payload.get("locality", provider.locality)).strip()
+    allowed_cities = {"Chennai", "Coimbatore", "Tiruvannamalai"}
+    if not name or len(name) > 120: raise HTTPException(400, "Business name is required and must be at most 120 characters")
+    if city not in allowed_cities: raise HTTPException(400, "Select a supported city")
+    if not locality or len(locality) > 100: raise HTTPException(400, "Locality is required and must be at most 100 characters")
+    if len(description) > 4000: raise HTTPException(400, "Description must be at most 4000 characters")
+    provider.name, provider.description, provider.city, provider.locality = name, description, city, locality
+    db.commit(); db.refresh(provider)
+    return {"id": provider.id, "name": provider.name, "category": provider.category, "city": provider.city, "locality": provider.locality, "description": provider.description, "approval_status": provider.approval_status, "message": "Business profile updated"}
+
 @app.get("/api/provider/me")
 def provider_me(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     provider = db.query(models.Provider).options(joinedload(models.Provider.services)).filter(models.Provider.owner_user_id == user.id).first()
