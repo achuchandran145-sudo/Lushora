@@ -539,6 +539,23 @@ def mark_all_notifications_read(user:models.User=Depends(current_user),db:Sessio
     db.query(models.Notification).filter(models.Notification.recipient_user_id==user.id,models.Notification.is_read==False).update({"is_read":True})
     db.commit();return {"message":"All notifications marked as read"}
 
+
+BOOKING_REQUEST_TTL_HOURS = 24
+
+def _expire_stale_bookings(db:Session,provider_id:int|None=None):
+    now=datetime.utcnow()
+    query=db.query(models.Booking).filter(models.Booking.status=="requested",models.Booking.expires_at.isnot(None),models.Booking.expires_at<=now)
+    if provider_id is not None: query=query.filter(models.Booking.provider_id==provider_id)
+    stale=query.all()
+    for booking in stale:
+        booking.status="expired"
+        if booking.customer_user_id:
+            _create_notification(db,booking.customer_user_id,"Booking request expired",f"Your booking request #{booking.id} expired because it was not confirmed within 24 hours.","booking_status",booking.id)
+        provider=db.query(models.Provider).filter(models.Provider.id==booking.provider_id).first()
+        if provider and provider.owner_user_id:
+            _create_notification(db,provider.owner_user_id,"Booking request expired",f"Booking request #{booking.id} expired after 24 hours without confirmation.","booking_status",booking.id)
+    return len(stale)
+
 @app.post("/api/bookings", response_model=schemas.BookingOut, status_code=201)
 def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
     provider = db.query(models.Provider).filter(models.Provider.id == payload.provider_id).first()
@@ -546,6 +563,7 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     # Atomically update the provider lock row before reading booking conflicts.
     # This serializes competing booking writes on SQLite and locks the provider row on PostgreSQL.
     db.execute(update(models.Provider).where(models.Provider.id==provider.id).values(booking_lock_version=models.Provider.booking_lock_version+1))
+    _expire_stale_bookings(db,provider.id)
     service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
     if not service: raise HTTPException(404, "Provider or service not found")
     if payload.appointment_at.tzinfo is not None: raise HTTPException(400, "Send appointment time as local India time without timezone offset")
@@ -597,7 +615,7 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
         attached_user = _get_user_from_token(authorization[7:].strip(), db)
         if not attached_user: raise HTTPException(401, "Invalid or expired token")
         if attached_user.role != "customer": raise HTTPException(403, "Only customer accounts can book")
-    booking = models.Booking(**payload.model_dump(), customer_user_id=attached_user.id if attached_user else None)
+    booking = models.Booking(**payload.model_dump(), customer_user_id=attached_user.id if attached_user else None, expires_at=datetime.utcnow()+timedelta(hours=BOOKING_REQUEST_TTL_HOURS))
     db.add(booking)
     if provider.owner_user_id:
         _create_notification(db,provider.owner_user_id,"New booking request",f'{payload.customer_name} requested {service.name} for {payload.appointment_at.strftime("%d %b %Y, %I:%M %p")}.',"booking_request")
