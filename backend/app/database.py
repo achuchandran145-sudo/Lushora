@@ -79,6 +79,8 @@ def migrate_sqlite_schema():
                 conn.execute(text("CREATE INDEX ix_providers_city ON providers (city)"))
 
         user_cols = {c["name"] for c in inspector.get_columns("users")}
+        if "auth_token_version" not in user_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN auth_token_version INTEGER NOT NULL DEFAULT 0"))
         for col, sql in [
             ("first_name", "ALTER TABLE users ADD COLUMN first_name VARCHAR(80) NOT NULL DEFAULT ''"),
             ("last_name", "ALTER TABLE users ADD COLUMN last_name VARCHAR(80) NOT NULL DEFAULT ''"),
