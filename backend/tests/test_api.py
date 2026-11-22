@@ -116,3 +116,32 @@ def test_provider_owner_can_register_multiple_categories_but_not_duplicate_categ
     assert duplicate.status_code == 409
     rows = client.get('/api/providers').json()
     assert len(rows) == 0  # Pending listings are not public
+
+def test_customer_profile_requires_auth_and_validates_supported_city():
+    assert client.get('/api/v2/customer/profile').status_code == 401
+    registration = client.post('/api/auth/register', json={'full_name':'Profile Test','email':'profile-test@example.com','phone':'9876543230','password':'StrongPass123','role':'customer'})
+    headers = {'Authorization': f"Bearer {registration.json()['access_token']}"}
+    assert client.get('/api/v2/customer/profile', headers=headers).status_code == 200
+    incomplete = {'first_name':'Profile','last_name':'Test','street_address':'12 Test Street','city':'Coimbatore','locality':''}
+    assert client.patch('/api/v2/customer/profile',headers=headers,json=incomplete).status_code == 400
+    unsupported = {**incomplete,'locality':'Vadavalli','city':'Madurai'}
+    assert client.patch('/api/v2/customer/profile',headers=headers,json=unsupported).status_code == 400
+    valid = {**incomplete,'locality':'Vadavalli'}
+    saved = client.patch('/api/v2/customer/profile',headers=headers,json=valid)
+    assert saved.status_code == 200
+    assert saved.json()['profile_complete'] is True
+    assert saved.json()['city'] == 'Coimbatore'
+    assert client.get('/api/v2/customer/profile',headers=headers).json()['street_address'] == '12 Test Street'
+
+def test_provider_availability_validation_and_owner_access():
+    provider_reg = client.post('/api/auth/register',json={'full_name':'Availability Provider','email':'availability-provider@example.com','phone':'9876543231','password':'StrongPass123','role':'provider'})
+    headers = {'Authorization':f"Bearer {provider_reg.json()['access_token']}"}
+    listing = client.post('/api/provider/register',headers=headers,json={'name':'Availability Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':'Test'})
+    assert listing.status_code == 201
+    invalid_days = client.put('/api/provider/me/availability',headers=headers,json={'working_days':[8],'start_time':'09:00','end_time':'18:00'})
+    assert invalid_days.status_code == 400
+    invalid_hours = client.put('/api/provider/me/availability',headers=headers,json={'working_days':[0,1],'start_time':'18:00','end_time':'09:00'})
+    assert invalid_hours.status_code == 400
+    valid = client.put('/api/provider/me/availability',headers=headers,json={'working_days':[0,1,2,3,4],'start_time':'09:00','end_time':'18:00','break_start':'13:00','break_end':'14:00'})
+    assert valid.status_code == 200
+    assert valid.json()['working_days'] == [0,1,2,3,4]
