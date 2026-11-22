@@ -10,7 +10,7 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Audit current tests for meaningful assertions and coverage gaps
 - [ ] Check existing UI consistency, responsiveness, accessibility, loading/error/empty states
 - [ ] Audit database migration, backups, sensitive upload handling and security
-- [ ] Establish backlog issue/feature tracking and test matrix
+- [x] Establish repository master backlog (feature/test matrix still needs detailed validation)
 
 ## Phase 1 — Customer & provider profile completion
 - [ ] Customer profile edit API/UI end-to-end (API exists)
@@ -51,6 +51,14 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Payment tests (sandbox; live credentials need user setup)
 
 ## Phase 4 — Reviews & reputation
+- [x] Review model/API foundation
+- [x] Reviews API: customer submission, customer listing, public provider listing
+- [x] Eligibility: completed booking owned by customer
+- [x] One review per booking (unique constraint + API conflict handling)
+- [x] Admin moderation API (approve/reject)
+- [x] Provider reply API
+- [x] Public ratings aggregated from approved reviews
+- [ ] Review UI for customer/provider/admin
 - [ ] Review model/API/UI
 - [ ] Reviews restricted to eligible completed bookings
 - [ ] One review per booking; edit policy
