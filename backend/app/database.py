@@ -137,7 +137,7 @@ def migrate_sqlite_schema():
             if "expires_at" not in booking_cols:
                 conn.execute(text("ALTER TABLE bookings ADD COLUMN expires_at DATETIME"))
             if "staff_id" not in booking_cols:
-                conn.execute(text("ALTER TABLE bookings ADD COLUMN staff_id INTEGER REFERENCES provider_staff(id"))
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN staff_id INTEGER REFERENCES provider_staff(id)"))
         provider_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(providers)").fetchall()} if "providers" in table_names else set()
         if "providers" in table_names and "booking_lock_version" not in provider_cols:
             conn.execute(text("ALTER TABLE providers ADD COLUMN booking_lock_version INTEGER NOT NULL DEFAULT 0"))
