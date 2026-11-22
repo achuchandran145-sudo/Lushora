@@ -595,6 +595,7 @@ def create_waitlist_entry(payload:schemas.WaitlistCreate,user:models.User=Depend
     provider=db.query(models.Provider).filter(models.Provider.id==payload.provider_id).first()
     service=db.query(models.Service).filter(models.Service.id==payload.service_id,models.Service.provider_id==payload.provider_id).first()
     if not provider or not service: raise HTTPException(404,"Provider or service not found")
+    if staff_id is not None and not db.query(models.ProviderStaff).filter(models.ProviderStaff.id==staff_id,models.ProviderStaff.provider_id==provider_id,models.ProviderStaff.is_active==True).first(): raise HTTPException(400,"Staff member is unavailable for this provider")
     if payload.preferred_date.tzinfo is not None: raise HTTPException(400,"Preferred date must be local India time without timezone offset")
     if payload.preferred_date.date()<=datetime.now(LUSHORA_LOCAL_TZ).date(): raise HTTPException(400,"Preferred date must be in the future")
     for value in [payload.preferred_time_start,payload.preferred_time_end]:
@@ -827,7 +828,7 @@ def update_provider_availability(payload: dict, user: models.User = Depends(requ
     return cfg
 
 @app.get("/api/providers/{provider_id}/available-slots")
-def available_slots(provider_id:int,date:str=Query(...),service_id:int=Query(...),db:Session=Depends(get_db)):
+def available_slots(provider_id:int,date:str=Query(...),service_id:int=Query(...),staff_id:int|None=Query(None),db:Session=Depends(get_db)):
     provider=db.query(models.Provider).filter(models.Provider.id==provider_id,models.Provider.approval_status=="approved").first()
     service=db.query(models.Service).filter(models.Service.id==service_id,models.Service.provider_id==provider_id).first()
     if not provider or not service: raise HTTPException(404,"Provider or service not found")
@@ -847,7 +848,7 @@ def available_slots(provider_id:int,date:str=Query(...),service_id:int=Query(...
     t=start
     while t+timedelta(minutes=service.duration_minutes)<=end:
         finish=t+timedelta(minutes=service.duration_minutes)
-        if t>now and not (break_s and t<break_e and finish>break_s) and not any(t<eb+timedelta(minutes=es.duration_minutes) and finish>eb for b,es in active for eb in [b.appointment_at]):
+        if t>now and not (break_s and t<break_e and finish>break_s) and not any((staff_id is None or b.staff_id is None or b.staff_id==staff_id) and t<eb+timedelta(minutes=es.duration_minutes) and finish>eb for b,es in active for eb in [b.appointment_at]):
             slots.append(t.strftime("%H:%M"))
         t+=timedelta(minutes=step)
     return {"slots":slots,"duration_minutes":service.duration_minutes}
