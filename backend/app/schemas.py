@@ -69,3 +69,22 @@ class ProviderRegistrationIn(BaseModel):
     city: str
     locality: str = ""
     description: str = ""
+
+
+class WaitlistCreate(BaseModel):
+    provider_id: int
+    service_id: int
+    preferred_date: datetime
+    preferred_time_start: str = Field(default="", max_length=5)
+    preferred_time_end: str = Field(default="", max_length=5)
+
+class WaitlistOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    provider_id: int
+    service_id: int
+    preferred_date: datetime
+    preferred_time_start: str
+    preferred_time_end: str
+    status: str
+    created_at: datetime
