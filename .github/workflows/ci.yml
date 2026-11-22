@@ -6,7 +6,7 @@ on:
     branches: [main, chandran-work]
 concurrency:
   group: lushora-ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   backend-tests:
     runs-on: ubuntu-22.04
