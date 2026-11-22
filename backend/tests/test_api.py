@@ -290,7 +290,6 @@ def test_payment_record_is_owner_scoped_and_idempotent_pending_only():
     booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Payment Owner','customer_phone':'9876543290','provider_id':p['id'],'service_id':service['id'],'appointment_at':at,'notes':''})
     assert booking.status_code==201
     bid=booking.json()['id']
-    assert client.post('/api/payments',headers=headers,json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'}).status_code==201
     first=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'})
     assert first.status_code==201 and first.json()['status']=='pending'
     second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'})
