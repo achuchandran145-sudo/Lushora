@@ -103,7 +103,8 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     browser.get_by_role("button", name="SEND OTP").click()
 
     otp_input = browser.get_by_placeholder("Enter 6-digit OTP")
-    browser.wait_for_function("document.querySelector('input[placeholder=\"Enter 6-digit OTP\"]').value.length === 6")
+    otp_input.wait_for(timeout=10000)
+    assert len(otp_input.input_value()) == 6, "Development OTP should be populated by the OTP request response"
     otp_input.fill(otp_input.input_value())
     browser.get_by_role("button", name="VERIFY & CONTINUE").click()
     browser.wait_for_url("**/customer/profile", timeout=15000)
@@ -168,4 +169,4 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.get_by_label("Password").fill("StrongAdmin123!")
     browser.get_by_role("button", name="SIGN IN").click()
     browser.wait_for_url("**/admin", timeout=15000)
-    assert browser.get_by_role("heading", name="Platform overview").count() == 1
+    assert browser.get_by_role("heading", name="Dashboard").count() == 1
