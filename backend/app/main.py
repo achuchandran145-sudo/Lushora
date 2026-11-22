@@ -402,6 +402,31 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
     if not provider or not service: raise HTTPException(404, "Provider or service not found")
     if payload.appointment_at <= datetime.now(): raise HTTPException(400, "Appointment must be in the future")
+    # Enforce the provider's saved working hours, working days, closure dates and break
+    # during booking creation (not only when the UI displays available slots).
+    try:
+        availability=json.loads(provider.availability_config or "{}")
+    except Exception:
+        availability={}
+    availability=availability or {"working_days":[0,1,2,3,4,5],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
+    appointment_day=payload.appointment_at.date()
+    appointment_date=appointment_day.isoformat()
+    if appointment_day.weekday() not in availability.get("working_days",[]): raise HTTPException(400,"Provider is closed on the selected day")
+    if appointment_date in availability.get("closed_dates",[]): raise HTTPException(400,"Provider is closed on the selected date")
+    try:
+        work_start=datetime.combine(appointment_day,datetime.strptime(availability["start_time"],"%H:%M").time())
+        work_end=datetime.combine(appointment_day,datetime.strptime(availability["end_time"],"%H:%M").time())
+    except Exception:
+        raise HTTPException(400,"Provider availability configuration is invalid")
+    if payload.appointment_at < work_start or payload.appointment_at + timedelta(minutes=service.duration_minutes) > work_end:
+        raise HTTPException(400,"Appointment is outside provider working hours")
+    bs=availability.get("break_start");be=availability.get("break_end")
+    if bs and be:
+        break_start=datetime.combine(appointment_day,datetime.strptime(bs,"%H:%M").time())
+        break_end=datetime.combine(appointment_day,datetime.strptime(be,"%H:%M").time())
+        if payload.appointment_at < break_end and payload.appointment_at + timedelta(minutes=service.duration_minutes) > break_start:
+            raise HTTPException(400,"Appointment overlaps provider break time")
+
 
     # Prevent overlapping requests for the same provider. Requested bookings block the
     # slot until the provider accepts, rejects, or cancels them.
