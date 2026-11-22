@@ -12,6 +12,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), default="customer", nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    auth_token_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     first_name: Mapped[str] = mapped_column(String(80), default="")
     last_name: Mapped[str] = mapped_column(String(80), default="")
