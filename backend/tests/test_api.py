@@ -174,3 +174,28 @@ def test_reviews_require_completed_owned_booking_and_moderation():
     duplicate=client.post('/api/customer/me/reviews',headers=customer_headers,json={'booking_id':booking.json()['id'],'rating':4,'comment':'Again'})
     assert duplicate.status_code==409
     assert client.get(f"/api/providers/{provider['id']}/reviews").json()['review_count']==0 # pending moderation
+
+def test_provider_service_edit_owner_validation():
+    reg=client.post('/api/auth/register',json={'full_name':'Service Owner','email':'service-owner@example.com','phone':'9876543250','password':'StrongPass123','role':'provider'})
+    headers={'Authorization':f"Bearer {reg.json()['access_token']}"}
+    from app.database import get_db
+    from app import models
+    db=next(get_db())
+    try:
+        user=db.query(models.User).filter(models.User.email=='service-owner@example.com').first()
+        provider=models.Provider(owner_user_id=user.id,name='Edit Service Studio',category='Salon',city='Coimbatore',locality='Vadavalli',description='Test',approval_status='approved',verified=True)
+        db.add(provider);db.flush()
+        service=models.Service(provider_id=provider.id,name='Haircut',price_inr=500,duration_minutes=30)
+        db.add(service);db.commit();service_id=service.id
+        foreign=models.Provider(name='Foreign Studio',category='Salon',city='Coimbatore',locality='Vadavalli',description='Other',approval_status='approved')
+        db.add(foreign);db.flush()
+        foreign_service=models.Service(provider_id=foreign.id,name='Other service',price_inr=100,duration_minutes=20)
+        db.add(foreign_service);db.commit();foreign_service_id=foreign_service.id
+    finally: db.close()
+    edited=client.patch(f'/api/provider/me/services/{service_id}',headers=headers,json={'name':'Premium Haircut','price_inr':750,'duration_minutes':45})
+    assert edited.status_code==200
+    assert edited.json()['name']=='Premium Haircut'
+    assert edited.json()['price_inr']==750
+    assert edited.json()['duration_minutes']==45
+    assert client.patch(f'/api/provider/me/services/{service_id}',headers=headers,json={'price_inr':-1}).status_code==400
+    assert client.patch(f'/api/provider/me/services/{foreign_service_id}',headers=headers,json={'name':'Hijacked'}).status_code==404
