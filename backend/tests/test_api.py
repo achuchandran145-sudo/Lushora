@@ -145,3 +145,32 @@ def test_provider_availability_validation_and_owner_access():
     valid = client.put('/api/provider/me/availability',headers=headers,json={'working_days':[0,1,2,3,4],'start_time':'09:00','end_time':'18:00','break_start':'13:00','break_end':'14:00'})
     assert valid.status_code == 200
     assert valid.json()['working_days'] == [0,1,2,3,4]
+
+def test_reviews_require_completed_owned_booking_and_moderation():
+    customer = client.post('/api/auth/register',json={'full_name':'Review Customer','email':'review-customer@example.com','phone':'9876543240','password':'StrongPass123','role':'customer'})
+    customer_headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    client.post('/api/admin/demo-seed')
+    provider=client.get('/api/providers',params={'category':'Salon','city':'Coimbatore'}).json()[0]
+    service=provider['services'][0]
+    booking_payload={'customer_name':'Review Customer','customer_phone':'9876543240','provider_id':provider['id'],'service_id':service['id'],'appointment_at':(datetime.now()+timedelta(days=4)).isoformat(),'notes':'Review test'}
+    booking=client.post('/api/bookings',headers=customer_headers,json=booking_payload)
+    assert booking.status_code==201
+    not_completed=client.post('/api/customer/me/reviews',headers=customer_headers,json={'booking_id':booking.json()['id'],'rating':5,'comment':'Good'})
+    assert not_completed.status_code==400
+    # Set completed state through the test DB, then validate review submission rules.
+    from app.database import get_db
+    from app import models
+    db=next(get_db())
+    try:
+        row=db.query(models.Booking).filter(models.Booking.id==booking.json()['id']).first()
+        row.status='completed'
+        db.commit()
+    finally:
+        db.close()
+    invalid_rating=client.post('/api/customer/me/reviews',headers=customer_headers,json={'booking_id':booking.json()['id'],'rating':6,'comment':'Invalid'})
+    assert invalid_rating.status_code==400
+    created=client.post('/api/customer/me/reviews',headers=customer_headers,json={'booking_id':booking.json()['id'],'rating':5,'comment':'Great experience'})
+    assert created.status_code==201
+    duplicate=client.post('/api/customer/me/reviews',headers=customer_headers,json={'booking_id':booking.json()['id'],'rating':4,'comment':'Again'})
+    assert duplicate.status_code==409
+    assert client.get(f"/api/providers/{provider['id']}/reviews").json()['review_count']==0 # pending moderation
