@@ -48,7 +48,7 @@ Audit findings: current slot generation uses 30-minute stepping and naive server
 - [x] Refund request/review workflow foundation (manual; gateway refund execution and partial-refund accounting remain pending)
 - [x] Admin-configurable category commission rules (0–30%; API/UI and role/validation regression tests; not yet applied to collected payments or payout calculations)
 - [ ] Provider payout calculation and payout operations
-- [x] Admin payment ledger and summary with read-only reconciliation foundation (gateway settlement matching remains pending)
+- [x] Admin payment ledger and summary with read-only reconciliation foundation (payment type and balance due fields, payment-type summary; gateway settlement matching remains pending)
 - [ ] Customer receipt/invoice
 - [ ] Admin finance dashboard and audit trail
 - [x] Payment record tests for owner scope, idempotency, pending duplicate prevention, cancellation and full/advance amount calculations; sandbox/live gateway tests blocked until gateway configured
