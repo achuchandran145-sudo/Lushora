@@ -20,6 +20,7 @@ def test_production_settings_reject_weak_auth_secret(monkeypatch):
         main_module._validate_production_settings()
 
 def test_production_settings_are_validated_during_startup(monkeypatch):
+    import app.main as main_module
     monkeypatch.setenv('APP_ENV', 'production')
     monkeypatch.setenv('LUSHORA_AUTH_SECRET', 'weak-secret')
     monkeypatch.setenv('LUSHORA_OTP_DEV_MODE', 'true')
