@@ -521,3 +521,24 @@ def test_booking_rejects_non_slot_aligned_and_timezone_offset_times():
     assert client.post('/api/bookings',json=payload).status_code==400
     payload['appointment_at']=base.isoformat()+'+05:30'
     assert client.post('/api/bookings',json=payload).status_code==400
+
+
+def test_booking_reschedule_owner_validation_and_conflicts():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Reschedule Customer','email':'reschedule-customer@example.com','phone':'9876543316','password':'StrongPass123','role':'customer'})
+    other=client.post('/api/auth/register',json={'full_name':'Other Reschedule Customer','email':'reschedule-other@example.com','phone':'9876543317','password':'StrongPass123','role':'customer'})
+    h={'Authorization':f"Bearer {customer.json()['access_token']}"};ho={'Authorization':f"Bearer {other.json()['access_token']}"}
+    provider=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()[0];service=provider['services'][0]
+    day=(datetime.now()+timedelta(days=22)).date();first_time=datetime.combine(day,datetime.strptime('10:00','%H:%M').time());conflict_time=datetime.combine(day,datetime.strptime('11:00','%H:%M').time())
+    b1=client.post('/api/bookings',headers=h,json={'customer_name':'Reschedule Customer','customer_phone':'9876543316','provider_id':provider['id'],'service_id':service['id'],'appointment_at':first_time.isoformat(),'notes':''})
+    b2=client.post('/api/bookings',headers=ho,json={'customer_name':'Other Reschedule Customer','customer_phone':'9876543317','provider_id':provider['id'],'service_id':service['id'],'appointment_at':conflict_time.isoformat(),'notes':''})
+    assert b1.status_code==201 and b2.status_code==201
+    forbidden=client.patch(f"/api/bookings/{b1.json()['id']}/reschedule",headers=ho,json={'appointment_at':conflict_time.isoformat()})
+    assert forbidden.status_code==403
+    invalid=client.patch(f"/api/bookings/{b1.json()['id']}/reschedule",headers=h,json={'appointment_at':(conflict_time+timedelta(minutes=5)).isoformat()})
+    assert invalid.status_code==400
+    collision=client.patch(f"/api/bookings/{b1.json()['id']}/reschedule",headers=h,json={'appointment_at':conflict_time.isoformat()})
+    assert collision.status_code==409
+    valid_time=datetime.combine(day,datetime.strptime('12:00','%H:%M').time())
+    valid=client.patch(f"/api/bookings/{b1.json()['id']}/reschedule",headers=h,json={'appointment_at':valid_time.isoformat()})
+    assert valid.status_code==200 and valid.json()['appointment_at'].startswith(valid_time.isoformat())
