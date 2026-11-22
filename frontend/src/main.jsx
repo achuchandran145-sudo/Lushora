@@ -140,7 +140,15 @@ function App() {
 
   async function createPaymentRecord(bookingId,paymentType){
     if(!account?.access_token){setNotice('Sign in to create a payment record.');return;}
-    try{const key='lushora-'+bookingId+'-'+paymentType+'-'+Date.now();const r=await fetch(API+'/payments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+account.access_token,'Idempotency-Key':key},body:JSON.stringify({booking_id:bookingId,payment_type:paymentType})});const d=await r.json();if(!r.ok)throw Error(d.detail||'Payment record request failed');setNotice('Payment record #'+d.id+' created for ₹'+d.amount_inr+'. No money was collected because the gateway is not configured.');}catch(err){setNotice(err.message)}
+    try{
+      const key='lushora-'+bookingId+'-'+paymentType+'-'+Date.now();
+      const r=await fetch(API+'/payments',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+account.access_token,'Idempotency-Key':key},body:JSON.stringify({booking_id:bookingId,payment_type:paymentType})});
+      const d=await r.json();if(!r.ok)throw Error(d.detail||'Payment request failed');
+      if(!d.gateway_details){setNotice('Payment record #'+d.id+' created for ₹'+d.amount_inr+'. Gateway is not configured; no money was collected.');return;}
+      if(!window.Razorpay){await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://checkout.razorpay.com/v1/checkout.js';script.onload=resolve;script.onerror=()=>reject(new Error('Could not load Razorpay Checkout'));document.body.appendChild(script);});}
+      const opts={key:d.gateway_details.key_id,amount:d.gateway_details.amount,currency:d.gateway_details.currency,order_id:d.gateway_details.order_id,name:'LUSHORA',description:paymentType==='advance'?'20% booking advance':'Booking payment',prefill:{name:account.user?.full_name||'',contact:account.user?.phone||''},notes:{lushora_payment_id:String(d.id),booking_id:String(bookingId)},theme:{color:'#7c4d36'},handler:async response=>{try{const v=await fetch(API+'/payments/'+d.id+'/verify',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+account.access_token},body:JSON.stringify(response)});const vd=await v.json();if(!v.ok)throw Error(vd.detail||'Payment verification failed');setNotice('Payment verified successfully. Reference '+response.razorpay_payment_id);await openDashboard();}catch(err){setNotice('Payment verification failed: '+err.message+' — do not retry blindly; check payment status.')}}};
+      const checkout=new window.Razorpay(opts);checkout.on('payment.failed',response=>setNotice('Payment failed: '+(response.error?.description||'Please retry after checking status.')));checkout.open();
+    }catch(err){setNotice(err.message)}
   }
 
   async function updateBookingStatus(id, status) {
