@@ -18,7 +18,10 @@ try:
         with engine.begin() as _conn: _conn.exec_driver_sql("ALTER TABLE providers ADD COLUMN availability_config TEXT DEFAULT '{}'")
 except Exception: pass
 app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and wellness discovery and booking MVP")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# Configure production frontend origins through LUSHORA_CORS_ORIGINS (comma-separated).
+_CORS_ORIGINS=[origin.strip().rstrip("/") for origin in os.getenv("LUSHORA_CORS_ORIGINS","").split(",") if origin.strip()]
+_CORS_ORIGINS.extend(["http://localhost:5173","http://127.0.0.1:5173"])
+app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGINS)), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()
 TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
