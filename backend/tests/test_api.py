@@ -377,3 +377,23 @@ def test_refund_request_and_admin_review_foundation():
     processing=client.patch(f"/api/admin/refunds/{requested.json()['id']}/review",headers=admin_headers,json={'status':'processed'})
     assert processing.status_code==400
     assert client.get('/api/refunds/me',headers=cust_headers).status_code==200
+
+
+def test_provider_owner_profile_edit_and_isolation():
+    reg1=client.post('/api/auth/register',json={'full_name':'Profile Provider One','email':'profile-provider-one@example.com','phone':'9876543301','password':'StrongPass123','role':'provider'})
+    reg2=client.post('/api/auth/register',json={'full_name':'Profile Provider Two','email':'profile-provider-two@example.com','phone':'9876543302','password':'StrongPass123','role':'provider'})
+    h1={'Authorization':f"Bearer {reg1.json()['access_token']}"}
+    h2={'Authorization':f"Bearer {reg2.json()['access_token']}"}
+    p1=client.post('/api/provider/register',headers=h1,json={'name':'One Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':'Initial'})
+    p2=client.post('/api/provider/register',headers=h2,json={'name':'Two Studio','category':'Salon','city':'Chennai','locality':'Adyar','description':'Initial'})
+    assert p1.status_code==201 and p2.status_code==201
+    updated=client.patch('/api/provider/me/profile',headers=h1,json={'name':'One Premium Studio','description':'Updated business profile','city':'Coimbatore','locality':'RS Puram'})
+    assert updated.status_code==200
+    assert updated.json()['name']=='One Premium Studio'
+    assert updated.json()['locality']=='RS Puram'
+    foreign=client.patch('/api/provider/me/profile',headers=h1,json={'provider_id':p2.json()['id'],'name':'Hijacked','city':'Chennai','locality':'Adyar'})
+    assert foreign.status_code==404
+    invalid=client.patch('/api/provider/me/profile',headers=h1,json={'city':'Madurai','locality':'Central'})
+    assert invalid.status_code==400
+    blank=client.patch('/api/provider/me/profile',headers=h1,json={'name':' ','locality':'Vadavalli'})
+    assert blank.status_code==400
