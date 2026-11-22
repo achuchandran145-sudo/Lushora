@@ -31,7 +31,10 @@ app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and well
 _CORS_ORIGINS=[origin.strip().rstrip("/") for origin in os.getenv("LUSHORA_CORS_ORIGINS","").split(",") if origin.strip()]
 if os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() != "production":
     _CORS_ORIGINS.extend(["http://localhost:5173","http://127.0.0.1:5173"])
-app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGINS)), allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?", allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+if os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() == "production":
+    app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGINS)), allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+else:
+    app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGINS)), allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?", allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()
 
