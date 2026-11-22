@@ -115,12 +115,22 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     browser.get_by_label("City").select_option("Coimbatore")
     browser.get_by_label("Area / locality").select_option("Vadavalli")
     profile_requests = []
+    profile_responses = []
+    browser_errors = []
     browser.on("request", lambda request: profile_requests.append(request) if "/api/v2/customer/profile" in request.url and request.method == "PATCH" else None)
-    browser.get_by_role("button", name="SAVE & CONTINUE").click()
+    browser.on("response", lambda response: profile_responses.append(response) if "/api/v2/customer/profile" in response.url and response.request.method == "PATCH" else None)
+    browser.on("pageerror", lambda error: browser_errors.append(str(error)))
+    save_button = browser.get_by_role("button", name="SAVE & CONTINUE")
+    assert save_button.is_enabled(), "Profile save button is unexpectedly disabled"
+    save_button.click()
+    browser.wait_for_timeout(1000)
+    assert profile_requests, f"Save click did not issue profile PATCH. URL={browser.url}; page errors={browser_errors}; button enabled={save_button.is_enabled()}"
+    assert profile_responses, f"Profile PATCH request had no response. Requests={[request.url for request in profile_requests]}; page errors={browser_errors}"
+    response = profile_responses[-1]
+    assert response.status == 200, f"Profile PATCH returned {response.status}. URL={response.url}; page errors={browser_errors}"
     notice = browser.locator(".portal-notice")
-    notice.wait_for(timeout=15000)
-    assert "Profile saved successfully." in notice.inner_text(), f"Profile save failed: {notice.inner_text()}"
-    assert profile_requests, "Profile save button did not issue a PATCH request to the profile API"
+    assert notice.is_visible(), f"Profile success/error notice missing after HTTP 200. Page errors={browser_errors}"
+    assert "Profile saved successfully." in notice.inner_text(), f"Profile save notice incorrect: {notice.inner_text()}"
     browser.wait_for_function("window.location.pathname === '/'", timeout=10000)
     browser.goto(e2e_servers["web"] + "/")
 
