@@ -30,7 +30,8 @@ def channel_status():
     return {c:{"configured":channel_configured(c),"dispatch_enabled":channel_configured(c),"status":"ready" if channel_configured(c) else "not_configured"} for c in CHANNELS}
 
 def _send_push(db,delivery,notification,user):
-    from firebase_admin import credentials, initialize_app, messaging, get_app\n    from . import models
+    from firebase_admin import credentials, initialize_app, messaging, get_app
+    from . import models
     raw=os.environ["FCM_SERVICE_ACCOUNT_JSON"]
     try: app=get_app()
     except ValueError: app=initialize_app(credentials.Certificate(json.loads(raw)))
