@@ -173,6 +173,26 @@ def admin_payment_summary(user:models.User=Depends(require_role("admin")),db:Ses
     pending_amount=by_status.get("pending",{}).get("amount_inr",0)
     return {"total_count":total_count,"total_amount_inr":total_amount,"paid_amount_inr":paid_amount,"pending_amount_inr":pending_amount,"by_status":by_status}
 
+
+@app.get("/api/admin/payments/reconciliation")
+def admin_payment_reconciliation(limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rows=(db.query(models.Payment,models.Booking)
+          .join(models.Booking,models.Payment.booking_id==models.Booking.id)
+          .order_by(models.Payment.updated_at.desc())
+          .offset(offset).limit(limit).all())
+    findings=[]
+    for payment,booking in rows:
+        issue=None
+        if booking.status=="cancelled" and payment.status=="pending":
+            issue="cancelled_booking_with_pending_payment"
+        elif booking.status!="cancelled" and payment.status=="cancelled":
+            issue="cancelled_payment_with_active_booking"
+        elif booking.status=="cancelled" and payment.status=="paid":
+            issue="paid_payment_for_cancelled_booking_refund_review"
+        if issue:
+            findings.append({"payment_id":payment.id,"booking_id":booking.id,"customer_user_id":payment.customer_user_id,"provider_id":booking.provider_id,"payment_amount_inr":payment.amount_inr,"payment_status":payment.status,"booking_status":booking.status,"issue":issue,"updated_at":payment.updated_at})
+    return {"checked_records":len(rows),"limit":limit,"offset":offset,"findings_count":len(findings),"findings":findings,"note":"Read-only reconciliation report. Findings require manual review; no payment/refund action was performed."}
+
 @app.post("/api/v2/admin/subscriptions",status_code=201)
 def create_subscription(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     provider_id=int(payload.get("provider_id",0));area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();tier=str(payload.get("tier","")).lower()
