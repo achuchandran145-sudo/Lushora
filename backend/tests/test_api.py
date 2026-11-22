@@ -642,3 +642,21 @@ def test_admin_commission_rules_validation_and_permissions():
     customer=client.post('/api/auth/register',json={'full_name':'Commission Customer','email':'commission-customer@example.com','phone':'9876543325','password':'StrongPass123','role':'customer'})
     customer_headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
     assert client.get('/api/admin/commission-rules',headers=customer_headers).status_code==403
+
+
+def test_staff_specific_booking_capacity_and_slot_filtering():
+    owner=client.post('/api/auth/register',json={'full_name':'Staff Booking Owner','email':'staff-booking-owner@example.com','phone':'9876543327','password':'StrongPass123','role':'provider'})
+    headers={'Authorization':f"Bearer {owner.json()['access_token']}"}
+    assert client.post('/api/provider/register',headers=headers,json={'name':'Staff Booking Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':''}).status_code==201
+    staff_a=client.post('/api/provider/me/staff',headers=headers,json={'full_name':'Staff A','role':'staff','phone':'9876543328'}).json()
+    staff_b=client.post('/api/provider/me/staff',headers=headers,json={'full_name':'Staff B','role':'staff','phone':'9876543329'}).json()
+    provider=client.get('/api/provider/me',headers=headers).json();service=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()
+    owned=next(p for p in service if p['id']==provider['id']);svc=owned['services'][0]
+    at=datetime.combine((datetime.now()+timedelta(days=27)).date(),datetime.strptime('10:00','%H:%M').time())
+    def payload(staff):return {'customer_name':'Staff Customer','customer_phone':'9876543330','provider_id':provider['id'],'service_id':svc['id'],'appointment_at':at.isoformat(),'staff_id':staff['id']}
+    first=client.post('/api/bookings',json=payload(staff_a));assert first.status_code==201
+    different=client.post('/api/bookings',json=payload(staff_b));assert different.status_code==201
+    same=client.post('/api/bookings',json=payload(staff_a));assert same.status_code==409
+    slots_a=client.get('/api/providers/'+str(provider['id'])+'/available-slots',params={'date':at.date().isoformat(),'service_id':svc['id'],'staff_id':staff_a['id']}).json()['slots']
+    slots_b=client.get('/api/providers/'+str(provider['id'])+'/available-slots',params={'date':at.date().isoformat(),'service_id':svc['id'],'staff_id':staff_b['id']}).json()['slots']
+    assert '10:00' not in slots_a and '10:00' not in slots_b
