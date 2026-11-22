@@ -354,6 +354,13 @@ def update_notification_preferences(payload:dict,user:models.User=Depends(curren
         if field in payload:
             if not isinstance(payload[field],bool): raise HTTPException(400,f"{field} must be true or false")
             setattr(pref,field,payload[field])
+    for channel in ("push","whatsapp","sms"):
+        if getattr(pref,f"{channel}_enabled") is False:
+            db.query(models.NotificationDelivery).filter(
+                models.NotificationDelivery.user_id==user.id,
+                models.NotificationDelivery.channel==channel,
+                models.NotificationDelivery.status.in_(["queued","retry"])
+            ).update({"status":"suppressed","last_error":"User consent withdrawn","next_attempt_at":None},synchronize_session=False)
     db.commit();db.refresh(pref)
     return {"in_app_enabled":pref.in_app_enabled,"push_enabled":pref.push_enabled,"whatsapp_enabled":pref.whatsapp_enabled,"sms_enabled":pref.sms_enabled}
 @app.get("/api/admin/notification-channels")
