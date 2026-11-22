@@ -1011,3 +1011,30 @@ def test_production_rejects_repo_local_portfolio_storage(monkeypatch, tmp_path):
     monkeypatch.setenv('LUSHORA_PORTFOLIO_UPLOAD_DIR',str(repo_portfolio))
     with pytest.raises(RuntimeError,match='application repository'):
         main_module._validate_production_settings()
+
+
+def test_otp_audit_events_hash_phone_and_ip_and_never_store_otp():
+    from app.models import SecurityAuditEvent
+    phone = '9876543353'
+    request = client.post('/api/v2/customer/otp/request', json={'phone': phone})
+    assert request.status_code == 200
+    otp = request.json()['development_otp']
+    verify = client.post('/api/v2/customer/otp/verify', json={'phone': phone, 'otp': otp})
+    assert verify.status_code == 200
+
+    db = SessionLocal()
+    try:
+        events = db.query(SecurityAuditEvent).filter(
+            SecurityAuditEvent.event_type.in_(['otp_requested', 'otp_verify_success'])
+        ).order_by(SecurityAuditEvent.created_at.asc()).all()
+        assert {event.event_type for event in events} >= {'otp_requested', 'otp_verify_success'}
+        expected_phone_hash = __import__('app.main', fromlist=['_rate_limit_identifier'])._rate_limit_identifier('+91' + phone)
+        expected_ip_hash = __import__('app.main', fromlist=['_rate_limit_identifier'])._rate_limit_identifier('127.0.0.1')
+        for event in events:
+            assert event.identifier_hash == expected_phone_hash
+            assert event.ip_hash == expected_ip_hash
+            assert phone not in event.identifier_hash
+            assert otp not in event.identifier_hash
+            assert otp not in event.ip_hash
+    finally:
+        db.close()
