@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 class ServiceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -44,12 +44,25 @@ class RegisterIn(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=255)
     phone: str = Field(default="", max_length=20)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=12, max_length=128)
     role: str = Field(default="customer")
 
+    @field_validator("password")
+    @classmethod
+    def enforce_password_policy(cls, value: str) -> str:
+        if not any(ch.islower() for ch in value):
+            raise ValueError("Password must contain a lowercase letter")
+        if not any(ch.isupper() for ch in value):
+            raise ValueError("Password must contain an uppercase letter")
+        if not any(ch.isdigit() for ch in value):
+            raise ValueError("Password must contain a number")
+        if not any(not ch.isalnum() for ch in value):
+            raise ValueError("Password must contain a special character")
+        return value
+
 class LoginIn(BaseModel):
-    email: str
-    password: str
+    email: str = Field(min_length=5, max_length=255)
+    password: str = Field(min_length=1, max_length=128)
 
 class UserOut(BaseModel):
     id: int
