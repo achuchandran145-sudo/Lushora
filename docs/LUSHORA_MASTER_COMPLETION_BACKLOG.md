@@ -13,13 +13,13 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [x] Establish repository master backlog (feature/test matrix still needs detailed validation)
 
 ## Phase 1 — Customer & provider profile completion
-- [ ] Customer profile edit API/UI end-to-end (API exists)
-- [ ] Address and contact data model/UX completeness
-- [ ] Provider profile editing and onboarding completion UX
+- [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
+- [x] Address and contact data model/UX completeness (profile fields and city/locality/address validation)
+- [x] Provider profile editing and onboarding completion UX (owner-scoped API/UI; CI build + regression test)
 - [ ] Provider portfolio/gallery with secure media validation/storage
 - [x] Provider service edit API (name, price, duration) with owner validation + regression tests
 - [x] Provider service edit UI in portal (name, price, duration; owner-checked API)
-- [ ] Business operating hours, breaks, holidays and closure rules
+- [x] Business operating hours, breaks, holidays and closure rules (working-day/hour/break validation and ISO closure dates; booking checks + regression tests)
 - [ ] Staff/member profiles and permissions (future provider feature)
 - [ ] Multi-branch/locations support
 
