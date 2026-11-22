@@ -102,6 +102,7 @@ def require_role(role: str):
 
 @app.on_event("startup")
 def bootstrap_admin_from_environment():
+    _validate_production_settings()
     migrate_sqlite_schema()
     email = os.getenv("LUSHORA_ADMIN_EMAIL", "").strip().lower()
     password = os.getenv("LUSHORA_ADMIN_PASSWORD", "")
