@@ -50,6 +50,9 @@ def _validate_production_settings() -> None:
         raise RuntimeError("Production must disable development OTP mode (LUSHORA_OTP_DEV_MODE=false).")
     if not _CORS_ORIGINS:
         raise RuntimeError("Production requires LUSHORA_CORS_ORIGINS to contain trusted frontend origins.")
+    from .database import DATABASE_URL
+    if DATABASE_URL.startswith("sqlite"):
+        raise RuntimeError("Production requires a database with managed migrations and backup/restore; SQLite is development-only.")
     for origin in _CORS_ORIGINS:
         if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?", origin) or "*" in origin:
             raise RuntimeError("Production CORS origins must be valid HTTPS origins without wildcard or localhost.")
@@ -74,8 +77,9 @@ def _password_verify(password: str, stored: str) -> bool:
     except Exception:
         return False
 
-def _make_token(user_id: int) -> str:
-    payload = _b64(json.dumps({"sub": user_id, "exp": int(datetime.utcnow().timestamp()) + TOKEN_TTL_SECONDS}).encode())
+def _make_token(user_id: int, token_version: int = 0) -> str:
+    now = int(datetime.utcnow().timestamp())
+    payload = _b64(json.dumps({"sub": user_id, "iat": now, "exp": now + TOKEN_TTL_SECONDS, "iss": "lushora-api", "v": token_version, "jti": secrets.token_urlsafe(16)}, separators=(",", ":")).encode())
     signature = _b64(hmac.new(AUTH_SECRET, payload.encode(), hashlib.sha256).digest())
     return payload + "." + signature
 
@@ -85,8 +89,11 @@ def _get_user_from_token(token: str, db: Session):
         expected = _b64(hmac.new(AUTH_SECRET, payload.encode(), hashlib.sha256).digest())
         if not hmac.compare_digest(signature, expected): return None
         data = json.loads(base64.urlsafe_b64decode(payload + "=="))
-        if int(data["exp"]) < int(datetime.utcnow().timestamp()): return None
+        now = int(datetime.utcnow().timestamp())
+        if data.get("iss") != "lushora-api" or int(data.get("iat", 0)) > now + 60: return None
+        if int(data["exp"]) <= now or int(data["exp"]) <= int(data.get("iat", 0)): return None
         user = db.query(models.User).filter(models.User.id == int(data["sub"]), models.User.is_active == True).first()
+        if not user or int(data.get("v", -1)) != int(user.auth_token_version or 0): return None
         return user
     except Exception:
         return None
@@ -597,7 +604,7 @@ def customer_otp_verify(payload: dict, request: Request, db: Session = Depends(g
         user = models.User(full_name="LUSHORA Customer", email=placeholder_email, phone=phone, password_hash=_password_hash(secrets.token_urlsafe(32)), role="customer", is_active=True)
         db.add(user); db.flush()
     db.commit(); db.refresh(user)
-    return {"access_token": _make_token(user.id), "token_type": "bearer", "user": user}
+    return {"access_token": _make_token(user.id, user.auth_token_version), "token_type": "bearer", "user": user}
 
 
 
@@ -612,7 +619,7 @@ def register(payload: schemas.RegisterIn, request: Request, db: Session = Depend
     if db.query(models.User).filter(models.User.email == email).first(): raise HTTPException(409, "Email already registered")
     user = models.User(full_name=payload.full_name.strip(), email=email, phone=payload.phone.strip(), password_hash=_password_hash(payload.password), role=payload.role)
     db.add(user); db.commit(); db.refresh(user)
-    return {"access_token": _make_token(user.id), "user": user}
+    return {"access_token": _make_token(user.id, user.auth_token_version), "user": user}
 
 @app.post("/api/auth/login", response_model=schemas.TokenOut)
 def login(payload: schemas.LoginIn, request: Request, db: Session = Depends(get_db)):
@@ -627,6 +634,12 @@ def login(payload: schemas.LoginIn, request: Request, db: Session = Depends(get_
         raise HTTPException(401, "Email or password is incorrect")
     _clear_auth_limit(db, "login_email_failures", email)
     return {"access_token": _make_token(user.id), "user": user}
+
+@app.post("/api/auth/logout")
+def logout(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
+    user.auth_token_version = int(user.auth_token_version or 0) + 1
+    db.commit()
+    return {"message": "Logged out. Existing access tokens are revoked."}
 
 @app.get("/api/auth/me", response_model=schemas.UserOut)
 def me(user: models.User = Depends(current_user)):
