@@ -199,3 +199,19 @@ def test_provider_service_edit_owner_validation():
     assert edited.json()['duration_minutes']==45
     assert client.patch(f'/api/provider/me/services/{service_id}',headers=headers,json={'price_inr':-1}).status_code==400
     assert client.patch(f'/api/provider/me/services/{foreign_service_id}',headers=headers,json={'name':'Hijacked'}).status_code==404
+
+def test_booking_cancellation_requires_owner_and_allowed_state():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Cancel Owner','email':'cancel-owner@example.com','phone':'9876543260','password':'StrongPass123','role':'customer'})
+    token=customer.json()['access_token'];headers={'Authorization':f'Bearer {token}'}
+    provider=client.get('/api/providers').json()[0];service=provider['services'][0]
+    payload={'customer_name':'Cancel Owner','customer_phone':'9876543260','provider_id':provider['id'],'service_id':service['id'],'appointment_at':(datetime.now()+timedelta(days=5)).isoformat(),'notes':''}
+    booking=client.post('/api/bookings',headers=headers,json=payload)
+    assert booking.status_code==201
+    booking_id=booking.json()['id']
+    stranger=client.post('/api/auth/register',json={'full_name':'Cancel Stranger','email':'cancel-stranger@example.com','phone':'9876543261','password':'StrongPass123','role':'customer'})
+    stranger_headers={'Authorization':f"Bearer {stranger.json()['access_token']}"}
+    assert client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=stranger_headers).status_code==403
+    cancelled=client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=headers)
+    assert cancelled.status_code==200 and cancelled.json()['status']=='cancelled'
+    assert client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=headers).status_code==400
