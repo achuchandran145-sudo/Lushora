@@ -149,6 +149,19 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
 def my_payments(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
     return db.query(models.Payment).filter(models.Payment.customer_user_id==user.id).order_by(models.Payment.created_at.desc()).all()
 
+
+@app.get("/api/admin/payments")
+def admin_payment_list(status:str|None=None,booking_id:int|None=None,customer_user_id:int|None=None,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    q=db.query(models.Payment)
+    if status:
+        if status not in {"pending","cancelled","failed","paid","refunded","partially_refunded"}: raise HTTPException(400,"Invalid payment status filter")
+        q=q.filter(models.Payment.status==status)
+    if booking_id is not None: q=q.filter(models.Payment.booking_id==booking_id)
+    if customer_user_id is not None: q=q.filter(models.Payment.customer_user_id==customer_user_id)
+    total=q.count()
+    rows=q.order_by(models.Payment.created_at.desc()).offset(offset).limit(limit).all()
+    return {"total":total,"limit":limit,"offset":offset,"payments":[{"id":p.id,"booking_id":p.booking_id,"customer_user_id":p.customer_user_id,"amount_inr":p.amount_inr,"status":p.status,"gateway":p.gateway,"gateway_reference":p.gateway_reference,"created_at":p.created_at,"updated_at":p.updated_at} for p in rows]
+
 @app.post("/api/v2/admin/subscriptions",status_code=201)
 def create_subscription(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     provider_id=int(payload.get("provider_id",0));area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();tier=str(payload.get("tier","")).lower()
