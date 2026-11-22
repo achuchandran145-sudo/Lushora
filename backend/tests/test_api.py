@@ -397,3 +397,21 @@ def test_provider_owner_profile_edit_and_isolation():
     assert invalid.status_code==400
     blank=client.patch('/api/provider/me/profile',headers=h1,json={'name':' ','locality':'Vadavalli'})
     assert blank.status_code==400
+
+
+def test_customer_profile_edit_validation_and_owner_scope():
+    reg=client.post('/api/auth/register',json={'full_name':'Profile Customer','email':'profile-customer@example.com','phone':'9876543303','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {reg.json()['access_token']}"}
+    saved=client.patch('/api/v2/customer/profile',headers=headers,json={'first_name':'Chandran','last_name':'User','street_address':'12 Main Road','city':'Coimbatore','locality':'Vadavalli'})
+    assert saved.status_code==200
+    assert saved.json()['profile_complete'] is True
+    assert client.get('/api/v2/customer/profile',headers=headers).json()['street_address']=='12 Main Road'
+    invalid_city=client.patch('/api/v2/customer/profile',headers=headers,json={'first_name':'Chandran','last_name':'User','street_address':'12 Main Road','city':'Madurai','locality':'Central'})
+    assert invalid_city.status_code==400
+    too_long=client.patch('/api/v2/customer/profile',headers=headers,json={'first_name':'A'*81,'last_name':'User','street_address':'12 Main Road','city':'Coimbatore','locality':'Vadavalli'})
+    assert too_long.status_code==400
+    missing=client.patch('/api/v2/customer/profile',headers=headers,json={'first_name':'Chandran','last_name':'User','street_address':'','city':'Coimbatore','locality':'Vadavalli'})
+    assert missing.status_code==400
+    other=client.post('/api/auth/register',json={'full_name':'Other Customer','email':'other-profile-customer@example.com','phone':'9876543304','password':'StrongPass123','role':'customer'})
+    other_headers={'Authorization':f"Bearer {other.json()['access_token']}"}
+    assert client.get('/api/v2/customer/profile',headers=other_headers).json()['profile_complete'] is False
