@@ -14,6 +14,11 @@ jobs:
           python-version: '3.13'
       - name: Install backend requirements
         run: pip install -r backend/requirements.txt
+      - name: Validate operational scripts
+        working-directory: backend
+        run: bash -n scripts/migrate_production.sh scripts/backup_postgres.sh scripts/restore_verify_postgres.sh
+      - name: Audit Python dependencies
+        run: pip install pip-audit && pip-audit -r backend/requirements.txt
       - name: Run backend tests
         working-directory: backend
         env:
@@ -31,6 +36,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Audit npm dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
       - name: Build frontend
         working-directory: frontend
         run: npm run build
