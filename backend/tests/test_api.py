@@ -346,3 +346,31 @@ def test_admin_payment_reconciliation_is_forbidden_to_customer():
     headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
     response=client.get('/api/admin/payments/reconciliation',headers=headers)
     assert response.status_code==403
+
+
+def test_refund_request_and_admin_review_foundation():
+    client.post('/api/admin/demo-seed')
+    cust=client.post('/api/auth/register',json={'full_name':'Refund Customer','email':'refund-customer@example.com','phone':'9876543217','password':'StrongPass123','role':'customer'})
+    admin=client.post('/api/auth/register',json={'full_name':'Refund Admin','email':'refund-admin@example.com','phone':'9876543218','password':'StrongPass123','role':'admin'})
+    cust_headers={'Authorization':f"Bearer {cust.json()['access_token']}"}
+    admin_headers={'Authorization':f"Bearer {admin.json()['access_token']}"}
+    p=client.get('/api/providers').json()[0]; service=p['services'][0]
+    appt=datetime.combine((datetime.now()+timedelta(days=11)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
+    booking=client.post('/api/bookings',headers=cust_headers,json={'customer_name':'Refund Customer','customer_phone':'9876543217','provider_id':p['id'],'service_id':service['id'],'appointment_at':appt,'notes':''})
+    payment=client.post('/api/payments',headers={**cust_headers,'Idempotency-Key':'refund-payment-001'},json={'booking_id':booking.json()['id']})
+    assert payment.status_code==201
+    from app.models import Payment
+    from app.database import get_db
+    db=next(get_db())
+    record=db.query(Payment).filter(Payment.id==payment.json()['id']).first(); record.status='paid'; db.commit(); db.close()
+    requested=client.post('/api/refunds',headers=cust_headers,json={'payment_id':payment.json()['id'],'reason':'Booking cancelled','amount_inr':payment.json()['amount_inr']})
+    assert requested.status_code==201 and requested.json()['status']=='requested'
+    duplicate=client.post('/api/refunds',headers=cust_headers,json={'payment_id':payment.json()['id'],'reason':'Duplicate','amount_inr':payment.json()['amount_inr']})
+    assert duplicate.status_code==409
+    customer_denied=client.get('/api/admin/refunds',headers=cust_headers)
+    assert customer_denied.status_code==403
+    approved=client.patch(f"/api/admin/refunds/{requested.json()['id']}/review",headers=admin_headers,json={'status':'approved','reviewer_note':'Reviewed manually'})
+    assert approved.status_code==200 and approved.json()['status']=='approved'
+    processing=client.patch(f"/api/admin/refunds/{requested.json()['id']}/review",headers=admin_headers,json={'status':'processed'})
+    assert processing.status_code==400
+    assert client.get('/api/refunds/me',headers=cust_headers).status_code==200
