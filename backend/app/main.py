@@ -310,6 +310,10 @@ def list_providers(category: str | None = None, categories: str | None = None, c
     if locality: q = q.filter(func.lower(models.Provider.locality).contains(locality.lower()))
     if verified is not None: q = q.filter(models.Provider.verified == verified)
     providers = q.order_by(models.Provider.verified.desc(), models.Provider.rating.desc()).all()
+    approved_reviews = db.query(models.Review.provider_id, func.avg(models.Review.rating), func.count(models.Review.id)).filter(models.Review.status == \"approved\").group_by(models.Review.provider_id).all()
+    review_stats = {pid: (float(avg), int(count)) for pid, avg, count in approved_reviews}
+    for provider_row in providers:
+        if provider_row.id in review_stats: provider_row.rating = round(review_stats[provider_row.id][0], 2)
     if min_price is not None or max_price is not None:
         providers = [p for p in providers if any((min_price is None or s.price_inr >= min_price) and (max_price is None or s.price_inr <= max_price) for s in p.services)]
     return providers
