@@ -8,9 +8,9 @@ Mark a task DONE only after implementation, automated tests, frontend production
 ## Phase 0 — Existing foundation audit (REMEDIATION IN PROGRESS)
 Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires green CI on the latest branch head plus the checklist evidence below.
 
-**Final verification snapshot:** latest branch head `a1443e9803c9bce0d6e8c8a4a54aa7e48f4e4d1` has successful required CI runs:
-https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041268844
-https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041264031
+**Final verification snapshot:** latest branch head `d04f4f51c8a83acea01964e72c658d18d493dde2` has successful required CI runs:
+https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042390707
+https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042384738
 
 Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly environment-dependent release validations.
 
@@ -75,6 +75,7 @@ Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly env
 - [ ] Browser E2E admin assertion used stale heading; corrected to current Dashboard heading.
 - [ ] SQLite partial-schema migration attempted to alter missing tables; guards added and staff migration SQL corrected.
 - [ ] PostgreSQL backup/restore drill initially used PostgreSQL+psycopg URL syntax with psql; CI script normalizes psql URLs. Latest run pending.
+- [x] Customer profile Save loading race: profile submission can now occur only after the initial profile GET completes; browser E2E waits for the enabled Save state.
 
 ### Phase 0 local verification evidence (2026-11-22)
 - [x] Browser E2E fixture fixed for Windows: Vite is launched through the Node executable directly, with explicit dependency checks and no npm/Vite process leak.
@@ -84,7 +85,7 @@ Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly env
 - [x] Frontend production build: PASS.
 - [x] npm audit: 0 vulnerabilities.
 - [x] pip-audit: no known vulnerabilities.
-- [x] GitHub Actions latest-head CI: PASS — runs https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041268844 and https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041264031 for commit a1443e9803c9bce0d6e8c8a4a54aa7e48f4e4d1.
+- [x] GitHub Actions latest-head CI: PASS — runs https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042390707 and https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042384738 for commit d04f4f51c8a83acea01964e72c658d18d493dde2.
 - [x] Gitleaks repository and history scan: PASS — successful CI step `Scan repository and Git history for secrets`.
 - [x] PostgreSQL 16 migration and backup/restore CI drill: PASS — successful CI step `Run PostgreSQL migration and backup/restore drill`.
 - [x] Backend tests, Playwright/browser E2E, Python audit, operational scripts, npm audit and frontend build: PASS in the successful final-commit CI run.
