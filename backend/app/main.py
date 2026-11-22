@@ -1164,3 +1164,52 @@ def provider_staff_delete(staff_id:int,user: models.User = Depends(require_role(
     row=db.query(models.ProviderStaff).filter(models.ProviderStaff.id==staff_id,models.ProviderStaff.provider_id==provider.id).first()
     if not row: raise HTTPException(404,"Staff member not found")
     db.delete(row);db.commit();return {"message":"Staff member removed"}
+
+
+# Multi-location provider branches (each provider listing is a service category)
+SUPPORTED_BRANCH_CITIES={"Chennai","Coimbatore","Tiruvannamalai"}
+
+def _branch_out(row):
+    return {"id":row.id,"branch_name":row.branch_name,"city":row.city,"locality":row.locality,"address":row.address,"phone":row.phone,"is_active":row.is_active,"created_at":row.created_at}
+
+@app.get("/api/provider/me/branches")
+def provider_branches_list(user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    rows=db.query(models.ProviderBranch).filter(models.ProviderBranch.provider_id==provider.id).order_by(models.ProviderBranch.created_at.desc()).all()
+    return [_branch_out(r) for r in rows]
+
+@app.post("/api/provider/me/branches",status_code=201)
+def provider_branch_create(payload:dict,user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    name=str(payload.get("branch_name","")).strip();city=str(payload.get("city","")).strip();locality=str(payload.get("locality","")).strip();address=str(payload.get("address","")).strip();phone=str(payload.get("phone","")).strip()
+    if not name or len(name)>120 or not locality or len(locality)>120 or not address or len(address)>1000: raise HTTPException(400,"Branch name, locality and address are required and must fit their limits")
+    if city not in SUPPORTED_BRANCH_CITIES: raise HTTPException(400,"Select a supported city")
+    if len(phone)>20: raise HTTPException(400,"Phone must be 20 characters or fewer")
+    row=models.ProviderBranch(provider_id=provider.id,branch_name=name,city=city,locality=locality,address=address,phone=phone,is_active=True);db.add(row);db.commit();db.refresh(row);return _branch_out(row)
+
+@app.patch("/api/provider/me/branches/{branch_id}")
+def provider_branch_update(branch_id:int,payload:dict,user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    row=db.query(models.ProviderBranch).filter(models.ProviderBranch.id==branch_id,models.ProviderBranch.provider_id==provider.id).first()
+    if not row: raise HTTPException(404,"Branch not found")
+    for field,limit in [("branch_name",120),("locality",120),("address",1000),("phone",20)]:
+        if field in payload:
+            value=str(payload[field]).strip()
+            if field in {"branch_name","locality","address"} and not value: raise HTTPException(400,f"{field} is required")
+            if len(value)>limit: raise HTTPException(400,f"{field} exceeds maximum length")
+            setattr(row,field,value)
+    if "city" in payload:
+        city=str(payload["city"]).strip()
+        if city not in SUPPORTED_BRANCH_CITIES: raise HTTPException(400,"Select a supported city")
+        row.city=city
+    if "is_active" in payload:
+        if not isinstance(payload["is_active"],bool): raise HTTPException(400,"is_active must be boolean")
+        row.is_active=payload["is_active"]
+    db.commit();db.refresh(row);return _branch_out(row)
+
+@app.delete("/api/provider/me/branches/{branch_id}")
+def provider_branch_delete(branch_id:int,user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    row=db.query(models.ProviderBranch).filter(models.ProviderBranch.id==branch_id,models.ProviderBranch.provider_id==provider.id).first()
+    if not row: raise HTTPException(404,"Branch not found")
+    db.delete(row);db.commit();return {"message":"Branch removed"}
