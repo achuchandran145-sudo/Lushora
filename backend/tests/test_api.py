@@ -137,6 +137,15 @@ def test_otp_request_rate_limit_by_phone_and_ip():
     blocked=client.post('/api/v2/customer/otp/request',json={'phone':phone})
     assert blocked.status_code==429
 
+def test_otp_verify_attempts_are_limited_and_challenge_consumed():
+    request=client.post('/api/v2/customer/otp/request',json={'phone':'9876543294'})
+    assert request.status_code==200
+    otp=request.json()['development_otp']
+    for _ in range(5):
+        assert client.post('/api/v2/customer/otp/verify',json={'phone':'9876543294','otp':'000000' if otp!='000000' else '000001'}).status_code==401
+    blocked=client.post('/api/v2/customer/otp/verify',json={'phone':'9876543294','otp':otp})
+    assert blocked.status_code==429
+
 def test_customer_register_login_and_me():
     registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123','role':'customer'})
     assert registration.status_code == 201
