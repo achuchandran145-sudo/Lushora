@@ -278,3 +278,23 @@ def test_booking_status_transition_matrix_and_role_permissions():
     # A rejection is terminal; it cannot subsequently be confirmed.
     assert client.patch(f'/api/bookings/{bid}/status?status=rejected',headers=provider_headers).status_code==403
     assert client.patch(f'/api/bookings/{bid}/status?status=confirmed',headers=customer_headers).status_code==403
+
+def test_payment_record_is_owner_scoped_and_idempotent_pending_only():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Payment Owner','email':'pay-owner@example.com','phone':'9876543290','password':'StrongPass123','role':'customer'})
+    stranger=client.post('/api/auth/register',json={'full_name':'Payment Stranger','email':'pay-stranger@example.com','phone':'9876543291','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    stranger_headers={'Authorization':f"Bearer {stranger.json()['access_token']}"}
+    p=client.get('/api/providers').json()[0];service=p['services'][0]
+    at=datetime.combine((datetime.now()+timedelta(days=8)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
+    booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Payment Owner','customer_phone':'9876543290','provider_id':p['id'],'service_id':service['id'],'appointment_at':at,'notes':''})
+    assert booking.status_code==201
+    bid=booking.json()['id']
+    assert client.post('/api/payments',headers=headers,json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'}).status_code==201
+    first=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'})
+    assert first.status_code==201 and first.json()['status']=='pending'
+    second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'})
+    assert second.json()['id']==first.json()['id']
+    denied=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':stranger_headers['Authorization'],'Idempotency-Key':'stranger-key-0001'})
+    assert denied.status_code==404
+    assert client.get('/api/payments/me',headers=headers).status_code==200
