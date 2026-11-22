@@ -271,3 +271,16 @@ class ProviderBranch(Base):
     phone: Mapped[str] = mapped_column(String(20), default="", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BookingWaitlistEntry(Base):
+    __tablename__ = "booking_waitlist_entries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    customer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), index=True, nullable=False)
+    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"), nullable=False)
+    preferred_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    preferred_time_start: Mapped[str] = mapped_column(String(5), default="", nullable=False)
+    preferred_time_end: Mapped[str] = mapped_column(String(5), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
