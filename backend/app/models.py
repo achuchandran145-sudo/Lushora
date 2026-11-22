@@ -22,7 +22,7 @@ class User(Base):
 class Provider(Base):
     __tablename__ = "providers"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), unique=True, nullable=True)
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     approval_status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     category: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
