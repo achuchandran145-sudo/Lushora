@@ -27,7 +27,7 @@ Mark a task DONE only after implementation, automated tests, frontend production
 Audit findings: current slot generation uses 30-minute stepping and naive server-local datetimes; booking creation checks working hours/breaks/closures and overlapping bookings, but concurrent requests can race because overlap validation is read-before-write. Prioritize DB-level provider locking and slot/time validation.
 - [ ] Availability validation against provider schedule and service duration
 - [ ] Slot generation correctness and timezone policy
-- [ ] Prevent double-booking under concurrent requests (DB transaction/locking)
+- [x] Prevent double-booking under concurrent requests (provider-row lock/version update; concurrent-request regression test passes CI)
 - [ ] Staff-specific availability
 - [ ] Break/holiday/closure integration
 - [ ] Booking confirmation UX and statuses
