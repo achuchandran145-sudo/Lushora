@@ -1247,6 +1247,13 @@ def _provider_for_owner(user,db):
     if not provider: raise HTTPException(404,"Business profile not found")
     return provider
 
+@app.get("/api/providers/{provider_id}/staff")
+def public_provider_staff(provider_id:int,db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.id==provider_id,models.Provider.approval_status=="approved").first()
+    if not provider: raise HTTPException(404,"Provider not found")
+    rows=db.query(models.ProviderStaff).filter(models.ProviderStaff.provider_id==provider_id,models.ProviderStaff.is_active==True).order_by(models.ProviderStaff.full_name).all()
+    return [{"id":row.id,"full_name":row.full_name,"role":row.role} for row in rows]
+
 @app.get("/api/provider/me/staff")
 def provider_staff_list(user: models.User = Depends(require_role("provider")),db: Session = Depends(get_db)):
     provider=_provider_for_owner(user,db)
