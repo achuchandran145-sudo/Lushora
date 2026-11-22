@@ -415,3 +415,18 @@ def test_customer_profile_edit_validation_and_owner_scope():
     other=client.post('/api/auth/register',json={'full_name':'Other Customer','email':'other-profile-customer@example.com','phone':'9876543304','password':'StrongPass123','role':'customer'})
     other_headers={'Authorization':f"Bearer {other.json()['access_token']}"}
     assert client.get('/api/v2/customer/profile',headers=other_headers).json()['profile_complete'] is False
+
+
+def test_provider_availability_closure_dates_validation_and_normalization():
+    reg=client.post('/api/auth/register',json={'full_name':'Availability Owner','email':'availability-owner@example.com','phone':'9876543305','password':'StrongPass123','role':'provider'})
+    headers={'Authorization':f"Bearer {reg.json()['access_token']}"}
+    created=client.post('/api/provider/register',headers=headers,json={'name':'Availability Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':''})
+    assert created.status_code==201
+    valid=client.put('/api/provider/me/availability',headers=headers,json={'working_days':[0,1,1,5],'start_time':'09:00','end_time':'18:00','break_start':'13:00','break_end':'14:00','closed_dates':['2026-12-25','2026-12-25']})
+    assert valid.status_code==200
+    assert valid.json()['working_days']==[0,1,5]
+    assert valid.json()['closed_dates']==['2026-12-25']
+    invalid_date=client.put('/api/provider/me/availability',headers=headers,json={'working_days':[0],'start_time':'09:00','end_time':'18:00','closed_dates':['25-12-2026']})
+    assert invalid_date.status_code==400
+    invalid_type=client.put('/api/provider/me/availability',headers=headers,json={'working_days':[0],'start_time':'09:00','end_time':'18:00','closed_dates':'2026-12-25'})
+    assert invalid_type.status_code==400
