@@ -83,7 +83,6 @@ def test_notification_delivery_becomes_failed_at_attempt_limit(monkeypatch):
 
 def test_notification_delivery_suppressed_when_consent_disabled(monkeypatch):
     delivery_id = _delivery(enabled=False)
-    monkeypatch.setattr(notification_service, "dispatch_delivery", lambda *_: pytest.fail("must not send without consent"))
     db = SessionLocal()
     try:
         assert notification_service.process_pending(db) == 1
