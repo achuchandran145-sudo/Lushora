@@ -80,7 +80,7 @@ function App() {
     e.preventDefault();
     if (!selected) return;
     try {
-      const r = await fetch(`${API}/bookings`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(account?.access_token ? { Authorization: 'Bearer ' + account.access_token } : {}) }, body: JSON.stringify({ customer_name: form.name, customer_phone: form.phone, provider_id: selected.provider.id, service_id: selected.service.id, appointment_at: new Date(slotDate+'T'+selectedSlot+':00').toISOString() }) });
+      const r = await fetch(`${API}/bookings`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(account?.access_token ? { Authorization: 'Bearer ' + account.access_token } : {}) }, body: JSON.stringify({ customer_name: form.name, customer_phone: form.phone, provider_id: selected.provider.id, service_id: selected.service.id, appointment_at: slotDate+'T'+selectedSlot+':00' }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || 'Booking request failed');
       setNotice(`Your booking request has been received. Reference #${d.id}.`);
