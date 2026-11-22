@@ -21,18 +21,20 @@ def _free_port():
         return sock.getsockname()[1]
 
 
-def _wait_http(url, process, timeout=45):
+def _wait_http(url, process, log_path, timeout=45):
     deadline = time.time() + timeout
     while time.time() < deadline:
         if process.poll() is not None:
-            raise RuntimeError(f"Server exited early with code {process.returncode}")
+            log_text=Path(log_path).read_text(errors="replace") if Path(log_path).exists() else ""
+            raise RuntimeError(f"Server exited early with code {process.returncode}. Log: {log_text[-4000:]}")
         try:
             with urlopen(url, timeout=2) as response:
                 if response.status < 500:
                     return
         except Exception:
             time.sleep(0.4)
-    raise RuntimeError(f"Server did not become ready: {url}")
+    log_text=Path(log_path).read_text(errors="replace") if Path(log_path).exists() else ""
+    raise RuntimeError(f"Server did not become ready: {url}. Log: {log_text[-4000:]}")
 
 
 @pytest.fixture(scope="session")
@@ -55,29 +57,32 @@ def e2e_servers(tmp_path_factory):
         "PYTHONPATH": str(BACKEND),
         "VITE_LUSHORA_API": api_url + "/api",
     })
-    backend = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)],
-        cwd=BACKEND, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    frontend = subprocess.Popen(
-        ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(web_port), "--strictPort"],
-        cwd=FRONTEND, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    try:
-        _wait_http(api_url + "/api/health", backend)
-        _wait_http(web_url, frontend)
+    backend_log=data_dir/"backend.log"
+    frontend_log=data_dir/"frontend.log"
+    with backend_log.open("w") as backend_stream, frontend_log.open("w") as frontend_stream:
+        backend = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)],
+            cwd=BACKEND, env=env, stdout=backend_stream, stderr=subprocess.STDOUT,
+        )
+        frontend = subprocess.Popen(
+            ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(web_port), "--strictPort"],
+            cwd=FRONTEND, env=env, stdout=frontend_stream, stderr=subprocess.STDOUT,
+        )
+        try:
+            _wait_http(api_url + "/api/health", backend, backend_log)
+            _wait_http(web_url, frontend, frontend_log)
         yield {"api": api_url, "web": web_url}
-    finally:
-        frontend.terminate()
-        backend.terminate()
-        try:
-            frontend.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            frontend.kill()
-        try:
-            backend.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            backend.kill()
+        finally:
+            frontend.terminate()
+            backend.terminate()
+            try:
+                frontend.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                frontend.kill()
+            try:
+                backend.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                backend.kill()
 
 
 @pytest.fixture
