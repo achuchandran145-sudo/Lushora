@@ -225,6 +225,9 @@ def test_logout_revokes_existing_access_token():
     assert client.get('/api/auth/me',headers=headers).status_code==200
     assert client.post('/api/auth/logout',headers=headers).status_code==200
     assert client.get('/api/auth/me',headers=headers).status_code==401
+    re_login=client.post('/api/auth/login',json={'email':'logout-user@example.com','password':'StrongPass123!'})
+    assert re_login.status_code==200
+    assert client.get('/api/auth/me',headers={'Authorization':f"Bearer {re_login.json()['access_token']}"}).status_code==200
 
 def test_token_claims_require_issuer_and_version():
     import app.main as main_module
@@ -254,6 +257,45 @@ def test_verification_upload_rejects_invalid_pdf_signature():
     assert submission.status_code==201
     fake=client.post('/api/v2/provider/verification/document/business',headers=headers,files={'file':('fake.pdf',b'not a pdf', 'application/pdf')})
     assert fake.status_code==400
+
+def test_expired_and_tampered_tokens_are_rejected():
+    import app.main as main_module
+    db=SessionLocal()
+    try:
+        user=User(full_name='Token Guard',email='token-guard@example.com',phone='',password_hash=_password_hash('StrongPass123!'),role='customer')
+        db.add(user);db.commit();db.refresh(user)
+        now=int(datetime.utcnow().timestamp())
+        payload=main_module._b64(json.dumps({'sub':user.id,'iat':now-3600,'exp':now-10,'iss':'lushora-api','v':0,'jti':'expired'}).encode())
+        signature=main_module._b64(hmac.new(main_module.AUTH_SECRET,payload.encode(),hashlib.sha256).digest())
+        assert main_module._get_user_from_token(payload+'.'+signature,db) is None
+        valid=main_module._make_token(user.id,user.auth_token_version)
+        payload_part,signature_part=valid.split('.')
+        tampered=payload_part+'.'+signature_part[:-1]+'X'
+        assert main_module._get_user_from_token(tampered,db) is None
+    finally:
+        db.close()
+
+def test_failed_login_creates_privacy_preserving_audit_event_and_admin_route_is_role_protected():
+    client.post('/api/auth/register',json={'full_name':'Audit User','email':'audit-user@example.com','phone':'9876543342','password':'StrongPass123!','role':'customer'})
+    assert client.post('/api/auth/login',json={'email':'audit-user@example.com','password':'wrong-password'}).status_code==401
+    customer=client.post('/api/auth/login',json={'email':'audit-user@example.com','password':'StrongPass123!'})
+    assert customer.status_code==200
+    customer_headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    assert client.get('/api/admin/security/audit',headers=customer_headers).status_code==403
+    db=SessionLocal()
+    try:
+        event=db.query(__import__('app.models',fromlist=['SecurityAuditEvent']).SecurityAuditEvent).filter_by(event_type='login_failed').first()
+        assert event is not None
+        assert event.identifier_hash and len(event.identifier_hash)==64
+        assert 'audit-user@example.com' not in event.identifier_hash
+        admin=User(full_name='Audit Admin',email='audit-admin@example.com',phone='',password_hash=_password_hash('StrongPass123!'),role='admin')
+        db.add(admin);db.commit();db.refresh(admin)
+        admin_token=main_module._make_token(admin.id,admin.auth_token_version)
+    finally:
+        db.close()
+    response=client.get('/api/admin/security/audit',headers={'Authorization':f'Bearer {admin_token}'})
+    assert response.status_code==200
+    assert any(item['event_type']=='login_failed' for item in response.json())
 
 def test_customer_register_login_and_me():
     registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123!','role':'customer'})
