@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import os, re, json, hmac, hashlib, base64, secrets
-from fastapi import FastAPI, Depends, HTTPException, Query, Header, Form
+from fastapi import FastAPI, Depends, HTTPException, Query, Header, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, update
@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 from .database import Base, engine, get_db, migrate_sqlite_schema
 from . import models, schemas
+from . import payment_gateway
 
 Base.metadata.create_all(bind=engine)
 # Add availability settings to existing SQLite provider tables.
@@ -163,8 +164,54 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
         if existing and existing.customer_user_id==user.id: return {"id":existing.id,"booking_id":existing.booking_id,"amount_inr":existing.amount_inr,"status":existing.status,"gateway":existing.gateway,"message":"Existing payment request returned"}
         raise HTTPException(409,"Payment request conflict")
     db.refresh(payment)
-    return {"id":payment.id,"booking_id":payment.booking_id,"amount_inr":payment.amount_inr,"payment_type":payment.payment_type,"balance_due_inr":payment.balance_due_inr,"status":payment.status,"gateway":payment.gateway,"message":"Payment record created; gateway not configured, no money collected"}
+    gateway_details=None
+    if payment_gateway.razorpay_configured():
+        try:
+            order=payment_gateway.create_order(payment.amount_inr,payment.receipt_number or f"lushora-payment-{payment.id}",{"lushora_payment_id":str(payment.id),"booking_id":str(payment.booking_id)})
+            payment.gateway="razorpay";payment.gateway_order_id=order["id"];payment.receipt_number=order.get("receipt",payment.receipt_number);db.commit()
+            gateway_details={"key_id":os.getenv("RAZORPAY_KEY_ID"),"order_id":payment.gateway_order_id,"amount":order.get("amount"),"currency":order.get("currency","INR")}
+        except Exception as exc:
+            payment.status="failed";db.commit()
+            raise HTTPException(502,"Payment gateway order creation failed; payment record marked failed")
+    return {"id":payment.id,"booking_id":payment.booking_id,"amount_inr":payment.amount_inr,"payment_type":payment.payment_type,"balance_due_inr":payment.balance_due_inr,"status":payment.status,"gateway":payment.gateway,"gateway_details":gateway_details,"message":"Razorpay order created; complete checkout" if gateway_details else "Payment record created; gateway not configured, no money collected"}
 
+
+
+@app.post("/api/payments/{payment_id}/verify")
+def verify_payment_checkout(payment_id:int,payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    payment=db.query(models.Payment).filter(models.Payment.id==payment_id,models.Payment.customer_user_id==user.id).first()
+    if not payment: raise HTTPException(404,"Payment not found")
+    order_id=str(payload.get("razorpay_order_id",""));payment_id_gateway=str(payload.get("razorpay_payment_id",""));signature=str(payload.get("razorpay_signature",""))
+    if payment.gateway!="razorpay" or not payment.gateway_order_id or order_id!=payment.gateway_order_id: raise HTTPException(400,"Payment order mismatch")
+    if not payment_gateway.verify_checkout_signature(order_id,payment_id_gateway,signature): raise HTTPException(400,"Payment signature verification failed")
+    if payment.status=="paid": return {"id":payment.id,"status":"paid","message":"Payment already verified"}
+    payment.gateway_payment_id=payment_id_gateway;payment.gateway_reference=payment_id_gateway;payment.status="paid";db.commit()
+    return {"id":payment.id,"status":payment.status,"message":"Payment signature verified and payment marked paid"}
+
+@app.post("/api/payments/razorpay/webhook")
+async def razorpay_webhook(request:Request,db:Session=Depends(get_db)):
+    raw=await request.body();signature=request.headers.get("X-Razorpay-Signature","");event_id=request.headers.get("x-razorpay-event-id","")
+    if not payment_gateway.verify_webhook_signature(raw,signature): raise HTTPException(400,"Webhook signature verification failed")
+    if not event_id: raise HTTPException(400,"Missing gateway event id")
+    try: data=json.loads(raw.decode());event_type=str(data.get("event",""));entity=(data.get("payload") or {}).get("payment",{}).get("entity",{})
+    except Exception: raise HTTPException(400,"Invalid webhook JSON")
+    existing=db.query(models.PaymentWebhookEvent).filter_by(event_id=event_id).first()
+    if existing:return {"received":True,"duplicate":True,"event_id":event_id}
+    event=models.PaymentWebhookEvent(gateway="razorpay",event_id=event_id,event_type=event_type,payload_json=raw.decode(errors="replace"),status="received")
+    db.add(event)
+    try:db.commit()
+    except Exception:db.rollback();return {"received":True,"duplicate":True,"event_id":event_id}
+    try:
+        order_id=entity.get("order_id");payment=db.query(models.Payment).filter_by(gateway_order_id=order_id,gateway="razorpay").first()
+        if event_type in {"payment.captured","order.paid"} and payment:
+            amount=entity.get("amount")
+            if amount is not None and int(amount)!=payment.amount_inr*100: raise ValueError("Captured amount does not match expected payment amount")
+            payment.status="paid";payment.gateway_payment_id=entity.get("id","");payment.gateway_reference=entity.get("id","")
+        elif event_type=="payment.failed" and payment and payment.status!="paid":payment.status="failed";payment.gateway_payment_id=entity.get("id","")
+        event.status="processed";event.processed_at=datetime.utcnow();db.commit()
+    except Exception as exc:
+        event.status="failed";event.last_error=str(exc)[:1000];db.commit()
+    return {"received":True,"event_id":event_id,"status":event.status}
 @app.get("/api/payments/me")
 def my_payments(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
     return db.query(models.Payment).filter(models.Payment.customer_user_id==user.id).order_by(models.Payment.created_at.desc()).all()
