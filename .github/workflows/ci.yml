@@ -26,6 +26,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Scan repository and Git history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Install backend requirements
         run: pip install -r backend/requirements.txt
       - name: Install Chromium for browser E2E
