@@ -1220,6 +1220,22 @@ async def upload_verification_document(doc_type: str, file: UploadFile = File(..
     data=await file.read(MAX_DOC_BYTES+1)
     if len(data)>MAX_DOC_BYTES: raise HTTPException(413,"Document must be 8 MB or smaller")
     suffix={"application/pdf":".pdf","image/jpeg":".jpg","image/png":".png"}[file.content_type]
+    # Validate actual file bytes rather than trusting the client-supplied MIME type.
+    if file.content_type == "application/pdf":
+        if not data.startswith(b"%PDF-"):
+            raise HTTPException(400, "Uploaded file does not contain a valid PDF signature")
+    else:
+        try:
+            with Image.open(BytesIO(data)) as probe:
+                probe.verify()
+            with Image.open(BytesIO(data)) as probe:
+                expected_format = {"image/jpeg": "JPEG", "image/png": "PNG"}[file.content_type]
+                if probe.format != expected_format:
+                    raise HTTPException(400, "Uploaded image type does not match its declared content type")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(400, "Uploaded image is invalid or corrupted")
     # Store verification files in a private, searchable business/city/locality folder.
     def _safe_folder(value: str) -> str:
         cleaned=re.sub(r"[^A-Za-z0-9._-]+","_",value.strip()).strip("._-")
