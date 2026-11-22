@@ -25,8 +25,8 @@ Mark a task DONE only after implementation, automated tests, frontend production
 
 ## Phase 2 — Booking engine
 Audit findings: current slot generation uses 30-minute stepping and naive server-local datetimes; booking creation checks working hours/breaks/closures and overlapping bookings, but concurrent requests can race because overlap validation is read-before-write. Prioritize DB-level provider locking and slot/time validation.
-- [ ] Availability validation against provider schedule and service duration
-- [ ] Slot generation correctness and timezone policy
+- [x] Availability validation against provider schedule, service duration, breaks and closures (booking creation enforces rules)
+- [x] Slot generation uses 30-minute increments; booking creation enforces the same grid and interprets naive timestamps as India-local (Asia/Kolkata); timezone offsets are rejected
 - [x] Prevent double-booking under concurrent requests (provider-row lock/version update; concurrent-request regression test passes CI)
 - [ ] Staff-specific availability
 - [ ] Break/holiday/closure integration
