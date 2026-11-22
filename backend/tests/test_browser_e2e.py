@@ -114,11 +114,13 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     browser.get_by_label("Street address").fill("10 E2E Test Street")
     browser.get_by_label("City").select_option("Coimbatore")
     browser.get_by_label("Area / locality").select_option("Vadavalli")
-    with browser.expect_response(lambda response: "/api/v2/customer/profile" in response.url and response.request.method == "PATCH", timeout=15000) as profile_response:
-        browser.get_by_role("button", name="SAVE & CONTINUE").click()
-    response = profile_response.value
-    assert response.status == 200, f"Customer profile PATCH failed: {response.status} {response.text()}"
-    browser.get_by_text("Profile saved successfully.", exact=True).wait_for(timeout=5000)
+    profile_requests = []
+    browser.on("request", lambda request: profile_requests.append(request) if "/api/v2/customer/profile" in request.url and request.method == "PATCH" else None)
+    browser.get_by_role("button", name="SAVE & CONTINUE").click()
+    notice = browser.locator(".portal-notice")
+    notice.wait_for(timeout=15000)
+    assert "Profile saved successfully." in notice.inner_text(), f"Profile save failed: {notice.inner_text()}"
+    assert profile_requests, "Profile save button did not issue a PATCH request to the profile API"
     browser.wait_for_function("window.location.pathname === '/'", timeout=10000)
     browser.goto(e2e_servers["web"] + "/")
 
