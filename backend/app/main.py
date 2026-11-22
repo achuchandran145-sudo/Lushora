@@ -761,6 +761,7 @@ def available_slots(provider_id:int,date:str=Query(...),service_id:int=Query(...
     bs=cfg.get("break_start");be=cfg.get("break_end")
     break_s=datetime.combine(day,datetime.strptime(bs,"%H:%M").time()) if bs and be else None
     break_e=datetime.combine(day,datetime.strptime(be,"%H:%M").time()) if bs and be else None
+    _expire_stale_bookings(db,provider_id);db.commit()
     active=db.query(models.Booking,models.Service).join(models.Service,models.Booking.service_id==models.Service.id).filter(models.Booking.provider_id==provider_id,models.Booking.status.in_(["requested","confirmed"]),func.date(models.Booking.appointment_at)==date).all()
     slots=[];step=BOOKING_SLOT_STEP_MINUTES;now=datetime.now(LUSHORA_LOCAL_TZ).replace(tzinfo=None)
     t=start
