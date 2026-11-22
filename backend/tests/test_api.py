@@ -542,3 +542,21 @@ def test_booking_reschedule_owner_validation_and_conflicts():
     valid_time=datetime.combine(day,datetime.strptime('12:00','%H:%M').time())
     valid=client.patch(f"/api/bookings/{b1.json()['id']}/reschedule",headers=h,json={'appointment_at':valid_time.isoformat()})
     assert valid.status_code==200 and valid.json()['appointment_at'].startswith(valid_time.isoformat())
+
+
+def test_booking_request_expires_after_24_hours_and_is_rejected_on_status_change():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Expiry Customer','email':'expiry-customer@example.com','phone':'9876543318','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    provider=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()[0];service=provider['services'][0]
+    day=(datetime.now()+timedelta(days=23)).date();appointment=datetime.combine(day,datetime.strptime('10:00','%H:%M').time())
+    booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Expiry Customer','customer_phone':'9876543318','provider_id':provider['id'],'service_id':service['id'],'appointment_at':appointment.isoformat(),'notes':''})
+    assert booking.status_code==201
+    with SessionLocal() as db:
+        row=db.query(__import__('app.models',fromlist=['Booking']).Booking).filter_by(id=booking.json()['id']).first()
+        row.expires_at=datetime.utcnow()-timedelta(seconds=1);db.commit()
+    response=client.patch(f"/api/bookings/{booking.json()['id']}/status?status=confirmed",headers=headers)
+    assert response.status_code==400 and 'expired' in response.json()['detail'].lower()
+    with SessionLocal() as db:
+        row=db.query(__import__('app.models',fromlist=['Booking']).Booking).filter_by(id=booking.json()['id']).first()
+        assert row.status=='expired'
