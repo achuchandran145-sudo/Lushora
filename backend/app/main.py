@@ -326,9 +326,22 @@ def review_refund(refund_id:int,payload:dict,user:models.User=Depends(require_ro
     if not refund: raise HTTPException(404,"Refund not found")
     action=str(payload.get("status","")).strip().lower()
     if action not in {"reviewing","approved","rejected","processed"}: raise HTTPException(400,"Invalid refund review status")
-    if action=="processed": raise HTTPException(400,"Processing a refund is disabled until a payment gateway is configured")
-    if refund.status not in {"requested","reviewing"}: raise HTTPException(409,"Refund is no longer reviewable")
-    if action=="approved" and refund.status=="rejected": raise HTTPException(409,"Rejected refund cannot be approved")
+    if action=="processed":
+        if refund.status!="approved":raise HTTPException(409,"Refund must be approved before processing")
+        payment=db.query(models.Payment).filter_by(id=refund.payment_id).first()
+        if not payment or payment.gateway!="razorpay" or not payment.gateway_payment_id:raise HTTPException(400,"Refund execution requires a verified Razorpay payment")
+        if not payment_gateway.razorpay_configured():raise HTTPException(400,"Razorpay credentials are not configured")
+        processed_total=db.query(func.coalesce(func.sum(models.Refund.amount_inr),0)).filter(models.Refund.payment_id==payment.id,models.Refund.status=="processed").scalar() or 0
+        if processed_total+refund.amount_inr>payment.amount_inr:raise HTTPException(400,"Refund exceeds remaining captured amount")
+        try:
+            gateway_refund=payment_gateway.create_refund(payment.gateway_payment_id,refund.amount_inr,f"lushora-refund-{refund.id}",{"lushora_refund_id":str(refund.id)})
+        except Exception as exc:raise HTTPException(502,"Gateway refund request failed; refund remains approved")
+        refund.status="processed";refund.external_reference=str(gateway_refund.get("id",""));refund.reviewer_user_id=user.id;refund.reviewer_note=str(payload.get("reviewer_note","")).strip()[:1000];refund.reviewed_at=datetime.utcnow()
+        total_processed=processed_total+refund.amount_inr
+        payment.status="refunded" if total_processed>=payment.amount_inr else "partially_refunded"
+        db.commit();db.refresh(refund)
+        return {"id":refund.id,"status":refund.status,"external_reference":refund.external_reference,"payment_status":payment.status,"message":"Refund submitted to Razorpay; gateway response recorded"}
+    if refund.status not in {"requested","reviewing","approved"}: raise HTTPException(409,"Refund is no longer reviewable")
     refund.status=action; refund.reviewer_user_id=user.id; refund.reviewer_note=str(payload.get("reviewer_note","")).strip()[:1000]; refund.reviewed_at=datetime.utcnow()
     db.commit(); db.refresh(refund)
     return {"id":refund.id,"status":refund.status,"reviewer_user_id":refund.reviewer_user_id,"reviewed_at":refund.reviewed_at,"reviewer_note":refund.reviewer_note,"message":"Refund review updated; approval does not transfer money"}
