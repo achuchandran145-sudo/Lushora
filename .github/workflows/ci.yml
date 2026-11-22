@@ -47,12 +47,14 @@ jobs:
           PGPASSWORD: lushora_ci_password
         run: |
           python -m alembic -c alembic.ini upgrade head
-          psql "$LUSHORA_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS ci_backup_drill_marker (id INTEGER PRIMARY KEY, marker TEXT NOT NULL); INSERT INTO ci_backup_drill_marker VALUES (1, 'backup-restore-ok');"
+          PG_SOURCE_URL="${LUSHORA_DATABASE_URL/postgresql+psycopg:/postgresql:}"
+          psql "$PG_SOURCE_URL" -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS ci_backup_drill_marker (id INTEGER PRIMARY KEY, marker TEXT NOT NULL); INSERT INTO ci_backup_drill_marker VALUES (1, 'backup-restore-ok');"
           bash scripts/backup_postgres.sh
           BACKUP_FILE="$(find "$LUSHORA_BACKUP_DIR" -type f -name 'lushora-*.dump' -print -quit)"
-          psql "$LUSHORA_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE lushora_restore_ci;"
+          psql "$PG_SOURCE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE lushora_restore_ci;"
           bash scripts/restore_verify_postgres.sh
-          psql "$LUSHORA_RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT marker FROM ci_backup_drill_marker WHERE id=1;" | grep -q backup-restore-ok
+          PG_RESTORE_URL="${LUSHORA_RESTORE_DATABASE_URL/postgresql+psycopg:/postgresql:}"
+          psql "$PG_RESTORE_URL" -v ON_ERROR_STOP=1 -c "SELECT marker FROM ci_backup_drill_marker WHERE id=1;" | grep -q backup-restore-ok
       - name: Install frontend dependencies for browser E2E
         working-directory: frontend
         run: npm ci
