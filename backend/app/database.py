@@ -93,8 +93,8 @@ def migrate_sqlite_schema():
                 ON auth_rate_limit_entries (scope, identifier_hash)
             """))
 
-        user_cols = {c["name"] for c in inspector.get_columns("users")}
-        if "auth_token_version" not in user_cols:
+        user_cols = {c["name"] for c in inspector.get_columns("users")} if "users" in table_names else set()
+        if "users" in table_names and "auth_token_version" not in user_cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN auth_token_version INTEGER NOT NULL DEFAULT 0"))
         for col, sql in [
             ("first_name", "ALTER TABLE users ADD COLUMN first_name VARCHAR(80) NOT NULL DEFAULT ''"),
@@ -103,7 +103,7 @@ def migrate_sqlite_schema():
             ("city", "ALTER TABLE users ADD COLUMN city VARCHAR(80) NOT NULL DEFAULT ''"),
             ("locality", "ALTER TABLE users ADD COLUMN locality VARCHAR(120) NOT NULL DEFAULT ''"),
         ]:
-            if col not in user_cols:
+            if "users" in table_names and col not in user_cols:
                 conn.execute(text(sql))
 
         if "notification_deliveries" in table_names:
@@ -131,12 +131,13 @@ def migrate_sqlite_schema():
             if "payments" in table_names and col not in payment_cols:
                 conn.execute(text(sql))
         booking_cols = {c["name"] for c in inspector.get_columns("bookings")} if "bookings" in table_names else set()
-        if "customer_user_id" not in booking_cols:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER"))
-        if "expires_at" not in booking_cols:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN expires_at DATETIME"))
-        if "staff_id" not in booking_cols:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN staff_id INTEGER REFERENCES provider_staff(id)"))
+        if "bookings" in table_names:
+            if "customer_user_id" not in booking_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER"))
+            if "expires_at" not in booking_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN expires_at DATETIME"))
+            if "staff_id" not in booking_cols:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN staff_id INTEGER REFERENCES provider_staff(id"))
         provider_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(providers)").fetchall()} if "providers" in table_names else set()
-        if "booking_lock_version" not in provider_cols:
+        if "providers" in table_names and "booking_lock_version" not in provider_cols:
             conn.execute(text("ALTER TABLE providers ADD COLUMN booking_lock_version INTEGER NOT NULL DEFAULT 0"))
