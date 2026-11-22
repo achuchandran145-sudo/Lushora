@@ -140,9 +140,16 @@ def update_subscription(subscription_id:int,payload:dict,user:models.User=Depend
     if not sub: raise HTTPException(404,"Subscription not found")
     status=str(payload.get("status","")).lower()
     if status not in {"active","paused","expired","cancelled"}: raise HTTPException(400,"Unsupported subscription status")
+    now=datetime.utcnow()
     sub.status=status
-    if status=="active" and not sub.starts_at: sub.starts_at=datetime.utcnow();sub.ends_at=datetime.utcnow()+timedelta(days=30)
-    db.commit();return {"id":sub.id,"status":sub.status,"starts_at":sub.starts_at,"ends_at":sub.ends_at}
+    # Explicit activation or renewal starts a fresh 30-day term; pausing/cancelling
+    # preserves the current term dates for audit and reporting.
+    if status=="active" and (not sub.starts_at or payload.get("renew") is True or (sub.ends_at and sub.ends_at<=now)):
+        sub.starts_at=now
+        sub.ends_at=now+timedelta(days=30)
+    elif status=="expired":
+        sub.ends_at=now
+    db.commit();return {"id":sub.id,"status":sub.status,"starts_at":sub.starts_at,"ends_at":sub.ends_at,"renewal_supported":True}
 
 # LUSHORA v2: area-based marketplace and sequential customer-lead distribution.
 @app.post("/api/v2/admin/areas", status_code=201)
