@@ -454,3 +454,23 @@ def test_provider_portfolio_upload_validation_and_owner_isolation():
     deleted=client.delete(f'/api/provider/me/portfolio/{image_id}',headers=h1)
     assert deleted.status_code==200
     assert client.get(upload.json()['image_url']).status_code==404
+
+
+def test_provider_staff_management_validation_and_owner_isolation():
+    r1=client.post('/api/auth/register',json={'full_name':'Staff Owner One','email':'staff-owner-one@example.com','phone':'9876543308','password':'StrongPass123','role':'provider'})
+    r2=client.post('/api/auth/register',json={'full_name':'Staff Owner Two','email':'staff-owner-two@example.com','phone':'9876543309','password':'StrongPass123','role':'provider'})
+    h1={'Authorization':f"Bearer {r1.json()['access_token']}"};h2={'Authorization':f"Bearer {r2.json()['access_token']}"}
+    for headers,name,city,loc in [(h1,'Staff Provider One','Coimbatore','Vadavalli'),(h2,'Staff Provider Two','Chennai','Adyar')]:
+        assert client.post('/api/provider/register',headers=headers,json={'name':name,'category':'Salon','city':city,'locality':loc,'description':''}).status_code==201
+    created=client.post('/api/provider/me/staff',headers=h1,json={'full_name':'Asha Staff','role':'manager','phone':'9876543310'})
+    assert created.status_code==201 and created.json()['role']=='manager'
+    staff_id=created.json()['id']
+    updated=client.patch(f'/api/provider/me/staff/{staff_id}',headers=h1,json={'role':'staff','is_active':False})
+    assert updated.status_code==200 and updated.json()['is_active'] is False
+    invalid=client.post('/api/provider/me/staff',headers=h1,json={'full_name':'Invalid','role':'admin'})
+    assert invalid.status_code==400
+    foreign=client.patch(f'/api/provider/me/staff/{staff_id}',headers=h2,json={'full_name':'Hijacked'})
+    assert foreign.status_code==404
+    assert len(client.get('/api/provider/me/staff',headers=h1).json())==1
+    assert client.delete(f'/api/provider/me/staff/{staff_id}',headers=h1).status_code==200
+    assert client.get('/api/provider/me/staff',headers=h1).json()==[]
