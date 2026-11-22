@@ -13,7 +13,8 @@ from .database import Base, engine, get_db, migrate_sqlite_schema
 from . import models, schemas
 from . import payment_gateway
 
-Base.metadata.create_all(bind=engine)
+if os.getenv('APP_ENV', os.getenv('ENVIRONMENT', 'development')).lower() != 'production':
+    Base.metadata.create_all(bind=engine)
 # Add availability settings to existing SQLite provider tables.
 try:
     from sqlalchemy import inspect as _inspect
@@ -53,6 +54,19 @@ def _validate_production_settings() -> None:
     from .database import DATABASE_URL
     if not DATABASE_URL.startswith(("postgresql://", "postgresql+")):
         raise RuntimeError("Production requires PostgreSQL; SQLite and unvalidated database engines are development-only.")
+    upload_dir = os.getenv("LUSHORA_VERIFICATION_UPLOAD_DIR", "")
+    backup_dir = os.getenv("LUSHORA_BACKUP_DIR", "")
+    retention = os.getenv("LUSHORA_BACKUP_RETENTION_DAYS", "")
+    if not upload_dir or not os.path.isabs(upload_dir):
+        raise RuntimeError("Production requires an absolute private LUSHORA_VERIFICATION_UPLOAD_DIR.")
+    if not backup_dir or not os.path.isabs(backup_dir):
+        raise RuntimeError("Production requires an absolute private LUSHORA_BACKUP_DIR.")
+    if not retention.isdigit() or int(retention) < 7:
+        raise RuntimeError("Production requires LUSHORA_BACKUP_RETENTION_DAYS of at least 7.")
+    repository_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    for configured_path in (upload_dir, backup_dir):
+        if os.path.commonpath([repository_root, os.path.abspath(configured_path)]) == repository_root:
+            raise RuntimeError("Production upload and backup directories must be outside the application repository.")
     for origin in _CORS_ORIGINS:
         if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?", origin) or "*" in origin:
             raise RuntimeError("Production CORS origins must be valid HTTPS origins without wildcard or localhost.")
@@ -122,6 +136,15 @@ def require_role(role: str):
 @app.on_event("startup")
 def bootstrap_admin_from_environment():
     _validate_production_settings()
+    if _is_production_environment():
+        from sqlalchemy import inspect as _inspect
+        from sqlalchemy import text as _text
+        with engine.connect() as _connection:
+            if not _inspect(engine).has_table("alembic_version"):
+                raise RuntimeError("Production database migrations are missing. Run backend/scripts/migrate_production.sh before starting the API.")
+            _revision = _connection.execute(_text("SELECT version_num FROM alembic_version")).scalar()
+            if not _revision:
+                raise RuntimeError("Production database has no applied Alembic migration revision.")
     migrate_sqlite_schema()
     email = os.getenv("LUSHORA_ADMIN_EMAIL", "").strip().lower()
     password = os.getenv("LUSHORA_ADMIN_PASSWORD", "")
