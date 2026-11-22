@@ -162,6 +162,17 @@ def admin_payment_list(status:str|None=None,booking_id:int|None=None,customer_us
     rows=q.order_by(models.Payment.created_at.desc()).offset(offset).limit(limit).all()
     return {"total":total,"limit":limit,"offset":offset,"payments":[{"id":p.id,"booking_id":p.booking_id,"customer_user_id":p.customer_user_id,"amount_inr":p.amount_inr,"status":p.status,"gateway":p.gateway,"gateway_reference":p.gateway_reference,"created_at":p.created_at,"updated_at":p.updated_at} for p in rows]}
 
+
+@app.get("/api/admin/payments/summary")
+def admin_payment_summary(user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rows=db.query(models.Payment.status,func.count(models.Payment.id),func.coalesce(func.sum(models.Payment.amount_inr),0)).group_by(models.Payment.status).all()
+    by_status={status:{"count":int(count),"amount_inr":int(amount)} for status,count,amount in rows}
+    total_count=sum(item["count"] for item in by_status.values())
+    total_amount=sum(item["amount_inr"] for item in by_status.values())
+    paid_amount=by_status.get("paid",{}).get("amount_inr",0)
+    pending_amount=by_status.get("pending",{}).get("amount_inr",0)
+    return {"total_count":total_count,"total_amount_inr":total_amount,"paid_amount_inr":paid_amount,"pending_amount_inr":pending_amount,"by_status":by_status}
+
 @app.post("/api/v2/admin/subscriptions",status_code=201)
 def create_subscription(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     provider_id=int(payload.get("provider_id",0));area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();tier=str(payload.get("tier","")).lower()
