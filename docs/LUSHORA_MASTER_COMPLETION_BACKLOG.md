@@ -18,7 +18,7 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Provider profile editing and onboarding completion UX
 - [ ] Provider portfolio/gallery with secure media validation/storage
 - [x] Provider service edit API (name, price, duration) with owner validation + regression tests
-- [ ] Service catalog CRUD/edit UX in provider portal (current create/delete UI; edit UI pending)
+- [x] Provider service edit UI in portal (name, price, duration; owner-checked API)
 - [ ] Business operating hours, breaks, holidays and closure rules
 - [ ] Staff/member profiles and permissions (future provider feature)
 - [ ] Multi-branch/locations support
