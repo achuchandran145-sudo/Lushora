@@ -7,6 +7,7 @@ from sqlalchemy import func
 from io import BytesIO
 from openpyxl import Workbook
 from fastapi.responses import StreamingResponse
+from PIL import Image
 from .database import Base, engine, get_db, migrate_sqlite_schema
 from . import models, schemas
 
@@ -716,7 +717,20 @@ def admin_get_verification_document(verification_id:int,doc_type:str,user:models
     if not filename: raise HTTPException(404,"Document not uploaded")
     target=(VERIFICATION_UPLOAD_DIR/filename).resolve()
     if VERIFICATION_UPLOAD_DIR not in target.parents or not target.is_file(): raise HTTPException(404,"Document not uploaded")
-    return FileResponse(target,filename=doc_type+"_verification_document",media_type="application/octet-stream")
+    # Return a PDF consistently: preserve uploaded PDFs and convert JPG/PNG uploads to PDF.
+    business_label=re.sub(r"[^A-Za-z0-9._-]+","_",row.business_name.strip()).strip("._-") or "business"
+    download_name=f"{business_label}_{doc_type}_verification.pdf"
+    if target.suffix.lower()==".pdf":
+        return FileResponse(target,filename=download_name,media_type="application/pdf")
+    try:
+        with Image.open(target) as source:
+            pdf_image=source.convert("RGB")
+            pdf_buffer=BytesIO()
+            pdf_image.save(pdf_buffer,format="PDF",resolution=150.0)
+        pdf_buffer.seek(0)
+        return StreamingResponse(pdf_buffer,media_type="application/pdf",headers={"Content-Disposition":f'attachment; filename="{download_name}"'})
+    except Exception:
+        raise HTTPException(422,"Unable to convert this verification image to PDF")
 
 @app.patch("/api/v2/admin/verifications/{verification_id}")
 def admin_review_verification(verification_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
