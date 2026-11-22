@@ -70,6 +70,19 @@ Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires gre
 - [ ] SQLite partial-schema migration attempted to alter missing tables; guards added and staff migration SQL corrected.
 - [ ] PostgreSQL backup/restore drill initially used PostgreSQL+psycopg URL syntax with psql; CI script normalizes psql URLs. Latest run pending.
 
+### Phase 0 local verification evidence (2026-11-22)
+- [x] Browser E2E fixture fixed for Windows: Vite is launched through the Node executable directly, with explicit dependency checks and no npm/Vite process leak.
+- [x] Customer profile E2E assertion fixed to validate the HTTP 200 PATCH response body, persisted profile values, completion state and redirect without depending on the transient portal notice.
+- [x] axe-core added to the frontend dev dependencies and lockfile so accessibility tests are reproducible by local and CI installs.
+- [x] Full local backend/API/browser suite: 84 passed.
+- [x] Frontend production build: PASS.
+- [x] npm audit: 0 vulnerabilities.
+- [x] pip-audit: no known vulnerabilities.
+- [ ] GitHub Actions latest-commit CI run: NOT COMPLETED locally; must be green on the final commit.
+- [ ] Gitleaks local binary: BLOCKED — ENVIRONMENT REQUIRED (binary is installed in CI but not present in this local Windows environment).
+- [ ] PostgreSQL migration and backup/restore drill: BLOCKED — ENVIRONMENT REQUIRED (requires the CI PostgreSQL 16 service or an equivalent local PostgreSQL instance).
+- [ ] Staging/production smoke test, live notification delivery, HTTPS/domain deployment, monitoring/alerting and real restore/RPO/RTO evidence: BLOCKED — ENVIRONMENT REQUIRED.
+
 ## Phase 1 — Customer & provider profile completion
 - [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
 - [x] Address and contact data model/UX completeness (profile fields and city/locality/address validation)

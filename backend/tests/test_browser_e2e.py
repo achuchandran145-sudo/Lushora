@@ -1,4 +1,5 @@
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -64,8 +65,14 @@ def e2e_servers(tmp_path_factory):
             [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(api_port)],
             cwd=BACKEND, env=env, stdout=backend_stream, stderr=subprocess.STDOUT,
         )
+        node_command = shutil.which("node")
+        if not node_command:
+            raise RuntimeError("Node.js executable is required to run browser E2E")
+        vite_entry = FRONTEND / "node_modules" / "vite" / "bin" / "vite.js"
+        if not vite_entry.exists():
+            raise RuntimeError("Frontend dependencies are not installed; run npm ci in frontend")
         frontend = subprocess.Popen(
-            ["npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", str(web_port), "--strictPort"],
+            [node_command, str(vite_entry), "--host", "127.0.0.1", "--port", str(web_port), "--strictPort"],
             cwd=FRONTEND, env=env, stdout=frontend_stream, stderr=subprocess.STDOUT,
         )
         try:
@@ -122,15 +129,33 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     browser.on("pageerror", lambda error: browser_errors.append(str(error)))
     save_button = browser.get_by_role("button", name="SAVE & CONTINUE")
     assert save_button.is_enabled(), "Profile save button is unexpectedly disabled"
-    save_button.click()
-    browser.wait_for_timeout(1000)
+    with browser.expect_response(lambda r: "/api/v2/customer/profile" in r.url and r.request.method == "PATCH", timeout=15000) as response_info:
+        save_button.click()
+    response = response_info.value
     assert profile_requests, f"Save click did not issue profile PATCH. URL={browser.url}; page errors={browser_errors}; button enabled={save_button.is_enabled()}"
     assert profile_responses, f"Profile PATCH request had no response. Requests={[request.url for request in profile_requests]}; page errors={browser_errors}"
-    response = profile_responses[-1]
     assert response.status == 200, f"Profile PATCH returned {response.status}. URL={response.url}; page errors={browser_errors}"
-    notice = browser.locator(".portal-notice")
-    assert notice.is_visible(), f"Profile success/error notice missing after HTTP 200. Page errors={browser_errors}"
-    assert "Profile saved successfully." in notice.inner_text(), f"Profile save notice incorrect: {notice.inner_text()}"
+    response_body = response.json()
+    assert response_body["profile_complete"] is True, f"Profile PATCH did not report completion: {response_body}"
+    assert response_body["first_name"] == "Browser"
+    assert response_body["last_name"] == "Customer"
+    assert response_body["street_address"] == "10 E2E Test Street"
+    assert response_body["city"] == "Coimbatore"
+    assert response_body["locality"] == "Vadavalli"
+    saved_profile = browser.evaluate("""async (apiUrl) => {
+      const account = JSON.parse(localStorage.getItem("lushora-customer"));
+      const response = await fetch(apiUrl + "/api/v2/customer/profile", {
+        headers: { Authorization: "Bearer " + account.access_token }
+      });
+      return {status: response.status, body: await response.json()};
+    }""", e2e_servers["api"])
+    assert saved_profile["status"] == 200
+    assert saved_profile["body"]["first_name"] == "Browser"
+    assert saved_profile["body"]["last_name"] == "Customer"
+    assert saved_profile["body"]["street_address"] == "10 E2E Test Street"
+    assert saved_profile["body"]["city"] == "Coimbatore"
+    assert saved_profile["body"]["locality"] == "Vadavalli"
+    assert saved_profile["body"]["profile_complete"] is True
     browser.wait_for_function("window.location.pathname === '/'", timeout=10000)
     browser.goto(e2e_servers["web"] + "/")
 
