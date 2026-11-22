@@ -106,9 +106,10 @@ def migrate_sqlite_schema():
             if col not in user_cols:
                 conn.execute(text(sql))
 
-        delivery_cols = {c["name"] for c in inspector.get_columns("notification_deliveries")} if "notification_deliveries" in table_names else set()
-        if "next_attempt_at" not in delivery_cols:
-            conn.execute(text("ALTER TABLE notification_deliveries ADD COLUMN next_attempt_at DATETIME"))
+        if "notification_deliveries" in table_names:
+            delivery_cols = {c["name"] for c in inspector.get_columns("notification_deliveries")}
+            if "next_attempt_at" not in delivery_cols:
+                conn.execute(text("ALTER TABLE notification_deliveries ADD COLUMN next_attempt_at DATETIME"))
         # Revoke legacy implicit external consent once; users can explicitly opt in afterward.
         if "notification_preferences" in table_names:
             conn.execute(text("""
@@ -122,12 +123,12 @@ def migrate_sqlite_schema():
                 conn.execute(text("UPDATE notification_preferences SET push_enabled=0, whatsapp_enabled=0, sms_enabled=0"))
                 conn.execute(text("INSERT INTO schema_migrations (migration_key) VALUES ('notification_external_opt_in_defaults_v1')"))
         payment_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(payments)").fetchall()} if "payments" in table_names else set()
-        if "payment_type" not in payment_cols:
+        if "payments" in table_names and "payment_type" not in payment_cols:
             conn.execute(text("ALTER TABLE payments ADD COLUMN payment_type VARCHAR(20) NOT NULL DEFAULT 'full'"))
-        if "balance_due_inr" not in payment_cols:
+        if "payments" in table_names and "balance_due_inr" not in payment_cols:
             conn.execute(text("ALTER TABLE payments ADD COLUMN balance_due_inr INTEGER NOT NULL DEFAULT 0"))
         for col,sql in [("gateway_order_id","ALTER TABLE payments ADD COLUMN gateway_order_id VARCHAR(120) NOT NULL DEFAULT ''"),("gateway_payment_id","ALTER TABLE payments ADD COLUMN gateway_payment_id VARCHAR(120) NOT NULL DEFAULT ''"),("receipt_number","ALTER TABLE payments ADD COLUMN receipt_number VARCHAR(40) NOT NULL DEFAULT ''")]:
-            if col not in payment_cols:
+            if "payments" in table_names and col not in payment_cols:
                 conn.execute(text(sql))
         booking_cols = {c["name"] for c in inspector.get_columns("bookings")} if "bookings" in table_names else set()
         if "customer_user_id" not in booking_cols:
