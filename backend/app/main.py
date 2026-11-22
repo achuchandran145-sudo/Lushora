@@ -48,6 +48,11 @@ def _validate_production_settings() -> None:
         raise RuntimeError("Production requires LUSHORA_AUTH_SECRET to be a strong secret of at least 32 bytes.")
     if OTP_DEV_MODE if "OTP_DEV_MODE" in globals() else os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true":
         raise RuntimeError("Production must disable development OTP mode (LUSHORA_OTP_DEV_MODE=false).")
+    if not _CORS_ORIGINS:
+        raise RuntimeError("Production requires LUSHORA_CORS_ORIGINS to contain trusted frontend origins.")
+    for origin in _CORS_ORIGINS:
+        if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?", origin) or "*" in origin:
+            raise RuntimeError("Production CORS origins must be valid HTTPS origins without wildcard or localhost.")
 TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
 LUSHORA_LOCAL_TZ = ZoneInfo('Asia/Kolkata')
 BOOKING_SLOT_STEP_MINUTES = 30
