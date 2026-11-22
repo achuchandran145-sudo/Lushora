@@ -8,6 +8,11 @@ Mark a task DONE only after implementation, automated tests, frontend production
 ## Phase 0 — Existing foundation audit (REMEDIATION IN PROGRESS)
 Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires green CI on the latest branch head plus the checklist evidence below.
 
+**Final verification snapshot:** commit `e8abe407dd4f97023dea4fa41439c3b17b11ec83` has a successful required CI run:
+https://github.com/achuchandran145-sudo/Lushora/actions/runs/45039840125
+
+Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly environment-dependent release validations.
+
 ### Remediation status
 - [x] Master backlog established.
 - [x] Backend test suite and frontend production build are part of CI.
@@ -17,7 +22,7 @@ Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires gre
 - [x] SQLite migration compatibility fixes for partial legacy schemas; tests added.
 - [x] Browser E2E coverage added for customer OTP/profile/mobile, guest discovery/booking, provider signup and admin login. Selector and wait logic remediation is ongoing.
 - [x] Operational backup/restore scripts and CI PostgreSQL service drill added; CI URL normalization and drill execution are still being corrected/validated.
-- [ ] Latest CI green: backend tests, Playwright E2E, pip-audit, npm audit, frontend build, PostgreSQL migration/backup/restore drill.
+- [x] Latest CI green: backend tests, Playwright E2E, pip-audit, npm audit, frontend build, PostgreSQL migration/backup/restore drill.
 - [ ] Auth: verify lockout thresholds/reset, concurrent request behavior, privacy of hashed identifiers, OTP expiry/replay/attempt consumption, token expiry/tampering/revocation/version invalidation.
 - [ ] Security audit events: verify sensitive action coverage, no credential/OTP/document PII in events, admin-only access and tamper-resistance assumptions.
 - [ ] Production config: test bootstrap-admin safety, secret rotation requirements, CORS exact origins, HTTPS, secure cookies/headers, file-storage isolation.
@@ -78,10 +83,13 @@ Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires gre
 - [x] Frontend production build: PASS.
 - [x] npm audit: 0 vulnerabilities.
 - [x] pip-audit: no known vulnerabilities.
-- [ ] GitHub Actions latest-commit CI run: NOT COMPLETED locally; must be green on the final commit.
-- [ ] Gitleaks local binary: BLOCKED — ENVIRONMENT REQUIRED (binary is installed in CI but not present in this local Windows environment).
-- [ ] PostgreSQL migration and backup/restore drill: BLOCKED — ENVIRONMENT REQUIRED (requires the CI PostgreSQL 16 service or an equivalent local PostgreSQL instance).
-- [ ] Staging/production smoke test, live notification delivery, HTTPS/domain deployment, monitoring/alerting and real restore/RPO/RTO evidence: BLOCKED — ENVIRONMENT REQUIRED.
+- [x] GitHub Actions final-commit CI: PASS — run https://github.com/achuchandran145-sudo/Lushora/actions/runs/45039840125 for commit e8abe407dd4f97023dea4fa41439c3b17b11ec83.
+- [x] Gitleaks repository and history scan: PASS — successful CI step `Scan repository and Git history for secrets`.
+- [x] PostgreSQL 16 migration and backup/restore CI drill: PASS — successful CI step `Run PostgreSQL migration and backup/restore drill`.
+- [x] Backend tests, Playwright/browser E2E, Python audit, operational scripts, npm audit and frontend build: PASS in the successful final-commit CI run.
+- [ ] Staging/production smoke test: BLOCKED — ENVIRONMENT REQUIRED (requires staging or production credentials and deployed URLs).
+- [ ] Live notification delivery: BLOCKED — ENVIRONMENT REQUIRED (requires real FCM/WhatsApp/SMS credentials and approved provider configuration).
+- [ ] HTTPS/domain production deployment, monitoring/alerting, real restore/RPO/RTO and incident ownership: BLOCKED — ENVIRONMENT REQUIRED.
 
 ## Phase 1 — Customer & provider profile completion
 - [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
