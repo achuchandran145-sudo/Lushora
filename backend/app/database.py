@@ -39,6 +39,18 @@ def migrate_sqlite_schema():
         if 'next_attempt_at' not in delivery_cols:
             conn.execute(text('ALTER TABLE notification_deliveries ADD COLUMN next_attempt_at DATETIME'))
         device_cols = {c['name'] for c in inspector.get_columns('notification_devices')} if 'notification_devices' in inspector.get_table_names() else set()
+        # Revoke legacy implicit external consent once; users can explicitly opt in afterward.
+        if 'notification_preferences' in inspector.get_table_names():
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    migration_key VARCHAR(120) PRIMARY KEY,
+                    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            already = conn.execute(text("SELECT 1 FROM schema_migrations WHERE migration_key='notification_external_opt_in_defaults_v1'")).first()
+            if not already:
+                conn.execute(text("UPDATE notification_preferences SET push_enabled=0, whatsapp_enabled=0, sms_enabled=0"))
+                conn.execute(text("INSERT INTO schema_migrations (migration_key) VALUES ('notification_external_opt_in_defaults_v1')"))
         booking_cols = {c['name'] for c in inspector.get_columns('bookings')}
         if 'customer_user_id' not in booking_cols:
             conn.execute(text('ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER'))
