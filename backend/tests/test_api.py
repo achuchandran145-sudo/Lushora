@@ -622,3 +622,17 @@ def test_full_and_advance_payment_amounts_and_invalid_type():
     total=service['price_inr'];expected=max(1,(total*20+99)//100)
     assert advance.json()['amount_inr']==expected and advance.json()['balance_due_inr']==total-expected and advance.json()['payment_type']=='advance'
     assert advance.json()['gateway']=='unconfigured' and 'no money collected' in advance.json()['message'].lower()
+
+
+def test_admin_commission_rules_validation_and_permissions():
+    from app.models import User
+    session=SessionLocal();admin=User(full_name='Commission Admin',email='commission-admin@example.com',phone='9876543324',password_hash=_password_hash('StrongPass123'),role='admin',is_active=True);session.add(admin);session.commit();session.refresh(admin);token=_make_token(admin.id);session.close()
+    headers={'Authorization':f'Bearer {token}'}
+    initial=client.get('/api/admin/commission-rules',headers=headers);assert initial.status_code==200 and len(initial.json())==4
+    updated=client.put('/api/admin/commission-rules',headers=headers,json={'rules':[{'category':'Salon','commission_percent':10},{'category':'Makeup','commission_percent':8}]});assert updated.status_code==200
+    assert next(r for r in updated.json() if r['category']=='Salon')['commission_percent']==10
+    assert client.put('/api/admin/commission-rules',headers=headers,json={'rules':[{'category':'Salon','commission_percent':31}]}).status_code==400
+    assert client.put('/api/admin/commission-rules',headers=headers,json={'rules':[{'category':'Unknown','commission_percent':5}]}).status_code==400
+    customer=client.post('/api/auth/register',json={'full_name':'Commission Customer','email':'commission-customer@example.com','phone':'9876543325','password':'StrongPass123','role':'customer'})
+    customer_headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    assert client.get('/api/admin/commission-rules',headers=customer_headers).status_code==403
