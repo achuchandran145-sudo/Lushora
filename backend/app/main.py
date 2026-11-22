@@ -630,12 +630,21 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     return booking
 
 
+
+@app.post("/api/admin/bookings/expire-stale")
+def admin_expire_stale_bookings(user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    expired_count=_expire_stale_bookings(db)
+    db.commit()
+    return {"expired_count":expired_count,"message":"Expired stale booking requests"}
+
 @app.patch("/api/bookings/{booking_id}/status")
 def update_booking_status(booking_id: int, status: str = Query(...), user: models.User = Depends(current_user), db: Session = Depends(get_db)):
     allowed = {"confirmed", "rejected", "cancelled", "completed"}
     if status not in allowed: raise HTTPException(400, "Unsupported booking status")
     booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
     if not booking: raise HTTPException(404, "Booking not found")
+    if booking.status=="requested" and booking.expires_at and booking.expires_at<=datetime.utcnow():
+        _expire_stale_bookings(db,booking.provider_id);db.commit();raise HTTPException(400,"Booking request has expired")
     provider = db.query(models.Provider).filter(models.Provider.id == booking.provider_id).first()
     is_admin = user.role == "admin"
     is_provider_owner = user.role == "provider" and provider and provider.owner_user_id == user.id
@@ -664,10 +673,12 @@ def update_booking_status(booking_id: int, status: str = Query(...), user: model
 
 @app.get("/api/customer/me/bookings")
 def customer_bookings(user: models.User = Depends(require_role("customer")), db: Session = Depends(get_db)):
+    _expire_stale_bookings(db);db.commit()
     return db.query(models.Booking).filter(models.Booking.customer_user_id == user.id).order_by(models.Booking.appointment_at.desc()).all()
 
 @app.get("/api/admin/bookings")
 def admin_bookings(user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    _expire_stale_bookings(db);db.commit()
     return db.query(models.Booking).order_by(models.Booking.appointment_at.desc()).all()
 
 @app.get("/api/provider/me/bookings/export.xlsx")
@@ -764,6 +775,7 @@ def available_slots(provider_id:int,date:str=Query(...),service_id:int=Query(...
 def provider_bookings(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     provider = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
     if not provider: raise HTTPException(404, "Business profile not found")
+    _expire_stale_bookings(db,provider.id);db.commit()
     return db.query(models.Booking).filter(models.Booking.provider_id == provider.id).order_by(models.Booking.appointment_at.asc()).all()
 
 @app.patch("/api/provider/me/profile")
