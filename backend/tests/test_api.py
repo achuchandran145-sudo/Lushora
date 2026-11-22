@@ -19,6 +19,14 @@ def test_production_settings_reject_weak_auth_secret(monkeypatch):
     with pytest.raises(RuntimeError, match='LUSHORA_AUTH_SECRET'):
         main_module._validate_production_settings()
 
+def test_production_settings_are_validated_during_startup(monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setenv('LUSHORA_AUTH_SECRET', 'weak-secret')
+    monkeypatch.setenv('LUSHORA_OTP_DEV_MODE', 'true')
+    with pytest.raises(RuntimeError, match='LUSHORA_AUTH_SECRET'):
+        main_module.bootstrap_admin_from_environment()
+
+
 def test_demo_seed_disabled_in_production(monkeypatch):
     monkeypatch.setenv('APP_ENV', 'production')
     assert client.post('/api/admin/demo-seed').status_code == 404
