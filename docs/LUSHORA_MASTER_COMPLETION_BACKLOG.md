@@ -44,7 +44,7 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Advance/full payment options
 - [ ] Payment status lifecycle and idempotency
 - [ ] Failed/pending payment recovery
-- [ ] Refunds/partial refunds
+- [x] Refund request/review workflow foundation (manual; gateway refund execution and partial-refund accounting remain pending)
 - [ ] Platform commission rules
 - [ ] Provider payout calculation and payout operations
 - [ ] Transaction ledger and reconciliation
@@ -101,7 +101,7 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Admin roles/permissions
 - [ ] Audit log for admin actions
 - [ ] Review moderation
-- [ ] Payments/refunds/commission/payouts
+- [ ] Payments/refunds/commission/payouts (refund request/review API foundation implemented; finance UI and gateway processing pending)
 - [ ] Support tickets and disputes
 - [ ] Coupon/promotion management
 - [ ] Provider/user suspend/restore workflows
