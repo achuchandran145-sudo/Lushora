@@ -1,4 +1,4 @@
-import json
+import json, hmac, hashlib, os
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from app.main import app, _password_hash, _make_token
@@ -662,3 +662,26 @@ def test_staff_specific_booking_capacity_and_slot_filtering():
     slots_a=client.get('/api/providers/'+str(provider['id'])+'/available-slots',params={'date':at.date().isoformat(),'service_id':svc['id'],'staff_id':staff_a['id']}).json()['slots']
     slots_b=client.get('/api/providers/'+str(provider['id'])+'/available-slots',params={'date':at.date().isoformat(),'service_id':svc['id'],'staff_id':staff_b['id']}).json()['slots']
     assert '10:00' not in slots_a and '10:00' not in slots_b
+
+
+def test_razorpay_order_checkout_signature_and_webhook_dedup(monkeypatch):
+    from app import payment_gateway
+    monkeypatch.setenv('RAZORPAY_KEY_ID','rzp_test_fake_key');monkeypatch.setenv('RAZORPAY_KEY_SECRET','fake_secret');monkeypatch.setenv('RAZORPAY_WEBHOOK_SECRET','fake_webhook_secret')
+    monkeypatch.setattr(payment_gateway,'create_order',lambda amount,receipt,notes:{'id':'order_mock_123','amount':amount*100,'currency':'INR','receipt':receipt})
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Gateway Customer','email':'gateway-customer@example.com','phone':'9876543331','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    provider=client.get('/api/providers').json()[0];service=provider['services'][0]
+    at=datetime.combine((datetime.now()+timedelta(days=28)).date(),datetime.strptime('10:00','%H:%M').time())
+    booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Gateway Customer','customer_phone':'9876543331','provider_id':provider['id'],'service_id':service['id'],'appointment_at':at.isoformat(),'notes':''});assert booking.status_code==201
+    created=client.post('/api/payments',headers={**headers,'Idempotency-Key':'razorpay-test-key-001'},json={'booking_id':booking.json()['id'],'payment_type':'full'});assert created.status_code==201
+    d=created.json()['gateway_details'];assert d['order_id']=='order_mock_123' and d['key_id']=='rzp_test_fake_key' and created.json()['gateway']=='razorpay'
+    payment_id=created.json()['id'];pay_id='pay_mock_456';sig=hmac.new(b'fake_secret',b'order_mock_123|pay_mock_456',hashlib.sha256).hexdigest()
+    invalid=client.post(f'/api/payments/{payment_id}/verify',headers=headers,json={'razorpay_order_id':'order_mock_123','razorpay_payment_id':pay_id,'razorpay_signature':'bad'});assert invalid.status_code==400
+    verified=client.post(f'/api/payments/{payment_id}/verify',headers=headers,json={'razorpay_order_id':'order_mock_123','razorpay_payment_id':pay_id,'razorpay_signature':sig});assert verified.status_code==200 and verified.json()['status']=='paid'
+    body=json.dumps({'event':'payment.captured','payload':{'payment':{'entity':{'id':pay_id,'order_id':'order_mock_123','amount':service['price_inr']*100}}}},separators=(',',':')).encode()
+    whsig=hmac.new(b'fake_webhook_secret',body,hashlib.sha256).hexdigest();whheaders={'X-Razorpay-Signature':whsig,'x-razorpay-event-id':'evt_mock_001'}
+    first=client.post('/api/payments/razorpay/webhook',content=body,headers=whheaders);assert first.status_code==200 and first.json()['status']=='processed'
+    duplicate=client.post('/api/payments/razorpay/webhook',content=body,headers=whheaders);assert duplicate.status_code==200 and duplicate.json()['duplicate'] is True
+    tampered=client.post('/api/payments/razorpay/webhook',content=body+b' ',headers=whheaders);assert tampered.status_code==400
+    record=client.get('/api/payments/me',headers=headers).json()[0];assert record['status']=='paid' and record['gateway_payment_id']==pay_id
