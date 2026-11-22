@@ -14,6 +14,7 @@ Audit snapshot (2026-11-22):
 - Sensitive verification document images were found under backend/private_verification_uploads. The files have now been removed from the current branch tree and the upload folders added to .gitignore. Their Git history may still contain the documents; history rewrite and external incident-response steps are NOT done and require explicit approval/coordination.
 - Frontend build passes; visual, responsive, keyboard/accessibility, browser journey and local device validation are not yet evidenced.
 - Production startup now validates authentication secret strength, disables development OTP, and requires trusted HTTPS CORS origins; regression tests added. Latest security-guard changes are awaiting CI confirmation.
+- Authentication hardening implemented: persistent hashed-identifier rate-limit counters for login failures, registration attempts, OTP request (phone/hour, phone/day, IP/hour) and OTP verification (phone/IP/hour); lockouts return HTTP 429 with Retry-After. Login success clears only email-specific failures; IP counters are retained. Regression tests cover threshold lockout and OTP attempt consumption. CI is pending for the latest commit.
 - [ ] Validate current marketplace/customer/provider/admin flows end-to-end
 - [ ] Audit current tests for meaningful assertions and coverage gaps
 - [ ] Check existing UI consistency, responsiveness, accessibility, loading/error/empty states
