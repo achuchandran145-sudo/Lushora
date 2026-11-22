@@ -21,6 +21,9 @@ jobs:
         run: bash -n scripts/migrate_production.sh scripts/backup_postgres.sh scripts/restore_verify_postgres.sh
       - name: Audit Python dependencies
         run: pip install pip-audit && pip-audit -r backend/requirements.txt
+      - name: Install frontend dependencies for browser E2E
+        working-directory: frontend
+        run: npm ci
       - name: Run backend tests
         working-directory: backend
         env:
