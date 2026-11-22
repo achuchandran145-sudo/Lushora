@@ -30,3 +30,14 @@ def verify_webhook_signature(raw_body:bytes,signature:str):
     if not secret:return False
     expected=hmac.new(secret.encode(),raw_body,hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected,signature or "")
+
+
+def create_refund(gateway_payment_id:str,amount_inr:int,receipt:str,notes:dict|None=None):
+    if not razorpay_configured():raise RuntimeError("Razorpay credentials are not configured")
+    key=os.environ["RAZORPAY_KEY_ID"];secret=os.environ["RAZORPAY_KEY_SECRET"]
+    body={"amount":int(amount_inr)*100,"notes":notes or {},"receipt":receipt}
+    req=Request("https://api.razorpay.com/v1/payments/"+gateway_payment_id+"/refund",data=json.dumps(body).encode(),headers={"Content-Type":"application/json","Authorization":"Basic "+base64.b64encode((key+":"+secret).encode()).decode()},method="POST")
+    try:
+        with urlopen(req,timeout=20) as response:return json.loads(response.read().decode())
+    except HTTPError as exc:raise RuntimeError("Razorpay refund failed: "+exc.read().decode(errors="replace")[:500])
+    except URLError as exc:raise RuntimeError("Razorpay refund failed: "+str(exc.reason))
