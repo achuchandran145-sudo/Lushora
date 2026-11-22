@@ -539,11 +539,12 @@ def mark_all_notifications_read(user:models.User=Depends(current_user),db:Sessio
 @app.post("/api/bookings", response_model=schemas.BookingOut, status_code=201)
 def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
     provider = db.query(models.Provider).filter(models.Provider.id == payload.provider_id).first()
-    service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
-    if not provider or not service: raise HTTPException(404, "Provider or service not found")
-    # Atomically update the provider lock row before overlap checks. This serializes
-    # competing booking writes on SQLite and obtains a row lock on PostgreSQL.
+    if not provider: raise HTTPException(404, "Provider or service not found")
+    # Atomically update the provider lock row before reading booking conflicts.
+    # This serializes competing booking writes on SQLite and locks the provider row on PostgreSQL.
     db.execute(update(models.Provider).where(models.Provider.id==provider.id).values(booking_lock_version=models.Provider.booking_lock_version+1))
+    service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
+    if not service: raise HTTPException(404, "Provider or service not found")
     if payload.appointment_at <= datetime.now(): raise HTTPException(400, "Appointment must be in the future")
     # Enforce the provider's saved working hours, working days, closure dates and break
     # during booking creation (not only when the UI displays available slots).
