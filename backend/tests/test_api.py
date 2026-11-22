@@ -183,6 +183,22 @@ def test_token_claims_require_issuer_and_version():
     finally:
         db.close()
 
+def test_verification_upload_rejects_fake_mime_file():
+    reg=client.post('/api/auth/register',json={'full_name':'Upload Provider','email':'upload-provider@example.com','phone':'9876543340','password':'StrongPass123!','role':'provider'})
+    headers={'Authorization':f"Bearer {reg.json()['access_token']}"}
+    submission=client.post('/api/v2/provider/verification/submit',headers=headers,json={'business_name':'Upload Salon','city':'Coimbatore','locality':'Vadavalli','address':'Test address','categories':['Salon']})
+    assert submission.status_code==201
+    fake=client.post('/api/v2/provider/verification/document/pan',headers=headers,files={'file':('fake.png',b'not an image', 'image/png')})
+    assert fake.status_code==400
+
+def test_verification_upload_rejects_invalid_pdf_signature():
+    reg=client.post('/api/auth/register',json={'full_name':'Upload Provider','email':'upload-provider-pdf@example.com','phone':'9876543341','password':'StrongPass123!','role':'provider'})
+    headers={'Authorization':f"Bearer {reg.json()['access_token']}"}
+    submission=client.post('/api/v2/provider/verification/submit',headers=headers,json={'business_name':'Upload Salon PDF','city':'Coimbatore','locality':'Vadavalli','address':'Test address','categories':['Salon']})
+    assert submission.status_code==201
+    fake=client.post('/api/v2/provider/verification/document/business',headers=headers,files={'file':('fake.pdf',b'not a pdf', 'application/pdf')})
+    assert fake.status_code==400
+
 def test_customer_register_login_and_me():
     registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123!','role':'customer'})
     assert registration.status_code == 201
