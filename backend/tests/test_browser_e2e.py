@@ -197,9 +197,22 @@ def test_homepage_and_customer_login_accessibility_audit(browser, e2e_servers):
 
 
 def test_primary_routes_have_no_mobile_horizontal_overflow(browser, e2e_servers):
-    browser.set_viewport_size({"width": 390, "height": 844})
-    for route in ("/", "/customer/login", "/business/login", "/admin/login"):
-        browser.goto(e2e_servers["web"] + route)
-        browser.wait_for_load_state("domcontentloaded")
-        overflow = browser.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
-        assert not overflow, f"Horizontal overflow on mobile route {route}"
+    for width in (360, 390, 768):
+        browser.set_viewport_size({"width": width, "height": 844})
+        for route in ("/", "/customer/login", "/business/login", "/admin/login"):
+            browser.goto(e2e_servers["web"] + route)
+            browser.wait_for_load_state("domcontentloaded")
+            overflow = browser.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
+            assert not overflow, f"Horizontal overflow at {width}px on route {route}"
+
+
+def test_keyboard_navigation_has_visible_focus_on_customer_login(browser, e2e_servers):
+    browser.goto(e2e_servers["web"] + "/customer/login")
+    browser.keyboard.press("Tab")
+    focus = browser.evaluate("""() => {
+      const el = document.activeElement;
+      const style = getComputedStyle(el);
+      return {tag: el.tagName, outlineWidth: style.outlineWidth, outlineStyle: style.outlineStyle, outlineColor: style.outlineColor};
+    }""")
+    assert focus["tag"] != "BODY", "Keyboard Tab should move focus to an interactive element"
+    assert focus["outlineStyle"] != "none" and focus["outlineWidth"] != "0px", "Keyboard focus must be visibly outlined"
