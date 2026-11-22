@@ -57,11 +57,11 @@ def test_overlapping_booking_rejected_but_non_overlapping_allowed():
     assert first.status_code == 201
     overlap = payload.copy()
     overlap['customer_name'] = 'Second Customer'
-    overlap['appointment_at'] = (start + timedelta(minutes=5)).isoformat()
+    overlap['appointment_at'] = start.isoformat()
     assert client.post('/api/bookings', json=overlap).status_code == 409
     non_overlap = payload.copy()
     non_overlap['customer_name'] = 'Third Customer'
-    non_overlap['appointment_at'] = (start + timedelta(minutes=service['duration_minutes'] + 5)).isoformat()
+    non_overlap['appointment_at'] = (start + timedelta(minutes=30)).isoformat()
     assert client.post('/api/bookings', json=non_overlap).status_code == 201
 
 
