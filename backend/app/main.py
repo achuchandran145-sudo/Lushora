@@ -695,7 +695,16 @@ def update_booking_status(booking_id: int, status: str = Query(...), user: model
     if is_provider_owner and status in {"confirmed","rejected","cancelled","completed"}:
         _create_notification(db,user.id,"Booking updated",f'Booking #{booking.id} is now {status}.',"booking_status",booking.id)
     db.commit()
-    return {"id": booking.id, "status": booking.status}
+    cancellation_policy={"fee_applies":False,"fee_percent":0,"notice_hours":None}
+    if status=="cancelled" and is_customer_owner:
+        try: availability_cfg=json.loads(provider.availability_config or "{}")
+        except Exception: availability_cfg={}
+        min_hours=int(availability_cfg.get("cancellation_min_hours",0) or 0)
+        fee_percent=int(availability_cfg.get("cancellation_fee_percent",0) or 0)
+        hours_until=(booking.appointment_at-datetime.now(LUSHORA_LOCAL_TZ).replace(tzinfo=None)).total_seconds()/3600
+        fee_applies=hours_until<min_hours and fee_percent>0
+        cancellation_policy={"fee_applies":fee_applies,"fee_percent":fee_percent if fee_applies else 0,"notice_hours":round(hours_until,2)}
+    return {"id": booking.id, "status": booking.status,"cancellation_policy":cancellation_policy}
 
 
 @app.get("/api/customer/me/bookings")
@@ -769,7 +778,11 @@ def update_provider_availability(payload: dict, user: models.User = Depends(requ
         except Exception:
             raise HTTPException(400,"Closed dates must use YYYY-MM-DD format")
         if value not in normalized_closed: normalized_closed.append(value)
-    cfg={"working_days":sorted(set(days)),"start_time":start,"end_time":end,"break_start":bs,"break_end":be,"closed_dates":normalized_closed}
+    cancel_min_hours=payload.get("cancellation_min_hours",0)
+    cancel_fee_percent=payload.get("cancellation_fee_percent",0)
+    if not isinstance(cancel_min_hours,int) or cancel_min_hours<0 or cancel_min_hours>168: raise HTTPException(400,"Cancellation notice hours must be between 0 and 168")
+    if not isinstance(cancel_fee_percent,int) or cancel_fee_percent<0 or cancel_fee_percent>100: raise HTTPException(400,"Cancellation fee percentage must be between 0 and 100")
+    cfg={"working_days":sorted(set(days)),"start_time":start,"end_time":end,"break_start":bs,"break_end":be,"closed_dates":normalized_closed,"cancellation_min_hours":cancel_min_hours,"cancellation_fee_percent":cancel_fee_percent}
     provider.availability_config=json.dumps(cfg);db.commit()
     return cfg
 
