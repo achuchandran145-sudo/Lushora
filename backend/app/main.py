@@ -58,17 +58,20 @@ def _validate_production_settings() -> None:
     if not DATABASE_URL.startswith(("postgresql://", "postgresql+")):
         raise RuntimeError("Production requires PostgreSQL; SQLite and unvalidated database engines are development-only.")
     upload_dir = os.getenv("LUSHORA_VERIFICATION_UPLOAD_DIR", "")
+    portfolio_dir = os.getenv("LUSHORA_PORTFOLIO_UPLOAD_DIR", "")
     backup_dir = os.getenv("LUSHORA_BACKUP_DIR", "")
     retention = os.getenv("LUSHORA_BACKUP_RETENTION_DAYS", "")
     if not upload_dir or not os.path.isabs(upload_dir):
         raise RuntimeError("Production requires an absolute private LUSHORA_VERIFICATION_UPLOAD_DIR.")
+    if not portfolio_dir or not os.path.isabs(portfolio_dir):
+        raise RuntimeError("Production requires an absolute private LUSHORA_PORTFOLIO_UPLOAD_DIR.")
     if not backup_dir or not os.path.isabs(backup_dir):
         raise RuntimeError("Production requires an absolute private LUSHORA_BACKUP_DIR.")
     if not retention.isdigit() or int(retention) < 7:
         raise RuntimeError("Production requires LUSHORA_BACKUP_RETENTION_DAYS of at least 7.")
     repository_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     import stat as _stat
-    for configured_path in (upload_dir, backup_dir):
+    for configured_path in (upload_dir, portfolio_dir, backup_dir):
         absolute_path = os.path.abspath(configured_path)
         if os.path.commonpath([repository_root, absolute_path]) == repository_root:
             raise RuntimeError("Production upload and backup directories must be outside the application repository.")
@@ -1501,7 +1504,9 @@ def provider_update_service(service_id:int,payload:dict,user:models.User=Depends
 
 # Provider portfolio/gallery uploads (public portfolio images, owner-managed)
 PORTFOLIO_UPLOAD_DIR = Path(os.getenv("LUSHORA_PORTFOLIO_UPLOAD_DIR", "./portfolio_uploads")).resolve()
-PORTFOLIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Never create a repo-local portfolio directory during production startup.
+if not _is_production_environment():
+    PORTFOLIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_PORTFOLIO_IMAGE_BYTES = 5 * 1024 * 1024
 ALLOWED_PORTFOLIO_FORMATS = {"JPEG", "PNG", "WEBP"}
 
