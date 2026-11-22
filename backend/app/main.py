@@ -51,8 +51,8 @@ def _validate_production_settings() -> None:
     if not _CORS_ORIGINS:
         raise RuntimeError("Production requires LUSHORA_CORS_ORIGINS to contain trusted frontend origins.")
     from .database import DATABASE_URL
-    if DATABASE_URL.startswith("sqlite"):
-        raise RuntimeError("Production requires a database with managed migrations and backup/restore; SQLite is development-only.")
+    if not DATABASE_URL.startswith(("postgresql://", "postgresql+")):
+        raise RuntimeError("Production requires PostgreSQL; SQLite and unvalidated database engines are development-only.")
     for origin in _CORS_ORIGINS:
         if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?", origin) or "*" in origin:
             raise RuntimeError("Production CORS origins must be valid HTTPS origins without wildcard or localhost.")
@@ -517,6 +517,7 @@ def _rate_limit_identifier(identifier: str) -> str:
 def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, window_seconds: int, *, consume: bool = False):
     now = datetime.utcnow()
     key = _rate_limit_identifier(identifier)
+    cutoff = now - timedelta(seconds=window_seconds)
     entry = db.query(models.AuthRateLimitEntry).filter(
         models.AuthRateLimitEntry.scope == scope,
         models.AuthRateLimitEntry.identifier_hash == key
@@ -525,23 +526,37 @@ def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, wind
         entry = models.AuthRateLimitEntry(scope=scope, identifier_hash=key, window_started_at=now, attempts=0)
         db.add(entry)
         db.flush()
+    if consume:
+        # Atomic row update: database row locking protects concurrent requests.
+        # Production is constrained to PostgreSQL, which supports the locking semantics.
+        from sqlalchemy import case
+        blocked = models.AuthRateLimitEntry.blocked_until > now
+        expired_window = models.AuthRateLimitEntry.window_started_at < cutoff
+        db.query(models.AuthRateLimitEntry).filter(
+            models.AuthRateLimitEntry.scope == scope,
+            models.AuthRateLimitEntry.identifier_hash == key
+        ).update({
+            models.AuthRateLimitEntry.attempts: case((blocked, models.AuthRateLimitEntry.attempts), (expired_window, 1), else_=models.AuthRateLimitEntry.attempts + 1),
+            models.AuthRateLimitEntry.window_started_at: case((blocked, models.AuthRateLimitEntry.window_started_at), (expired_window, now), else_=models.AuthRateLimitEntry.window_started_at),
+            models.AuthRateLimitEntry.blocked_until: case((blocked, models.AuthRateLimitEntry.blocked_until), (expired_window, None), else_=models.AuthRateLimitEntry.blocked_until)
+        }, synchronize_session=False)
+        db.flush()
+        entry = db.query(models.AuthRateLimitEntry).filter(
+            models.AuthRateLimitEntry.scope == scope,
+            models.AuthRateLimitEntry.identifier_hash == key
+        ).first()
     if entry.blocked_until and entry.blocked_until > now:
+        db.commit()
         return False, max(1, int((entry.blocked_until - now).total_seconds()))
     if now - entry.window_started_at >= timedelta(seconds=window_seconds):
         entry.window_started_at = now
         entry.attempts = 0
         entry.blocked_until = None
-    if not consume and entry.attempts >= limit:
+    if entry.attempts >= limit:
         entry.blocked_until = now + timedelta(seconds=window_seconds)
         db.commit()
         return False, window_seconds
-    if consume:
-        if entry.attempts >= limit:
-            entry.blocked_until = now + timedelta(seconds=window_seconds)
-            db.commit()
-            return False, window_seconds
-        entry.attempts += 1
-        db.commit()
+    db.commit()
     return True, 0
 
 def _check_auth_limit(db: Session, scope: str, identifier: str, limit: int, window_seconds: int):
