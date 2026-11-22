@@ -1054,3 +1054,60 @@ def provider_update_service(service_id:int,payload:dict,user:models.User=Depends
         service.duration_minutes=duration
     db.commit();db.refresh(service)
     return service
+
+
+# Provider portfolio/gallery uploads (public portfolio images, owner-managed)
+PORTFOLIO_UPLOAD_DIR = Path(os.getenv("LUSHORA_PORTFOLIO_UPLOAD_DIR", "./portfolio_uploads")).resolve()
+PORTFOLIO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MAX_PORTFOLIO_IMAGE_BYTES = 5 * 1024 * 1024
+ALLOWED_PORTFOLIO_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+@app.post("/api/provider/me/portfolio", status_code=201)
+async def upload_provider_portfolio_image(file: UploadFile = File(...), caption: str = "", user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    if len(caption.strip())>240: raise HTTPException(400,"Caption must be 240 characters or fewer")
+    raw=await file.read(MAX_PORTFOLIO_IMAGE_BYTES+1)
+    if len(raw)>MAX_PORTFOLIO_IMAGE_BYTES: raise HTTPException(413,"Portfolio image must be 5 MB or smaller")
+    try:
+        image=Image.open(BytesIO(raw))
+        image.verify()
+        image=Image.open(BytesIO(raw))
+        if image.format not in ALLOWED_PORTFOLIO_FORMATS: raise ValueError("Unsupported format")
+        if image.width<1 or image.height<1 or image.width*image.height>20_000_000: raise ValueError("Image dimensions are invalid or too large")
+    except Exception:
+        raise HTTPException(400,"Upload a valid JPEG, PNG or WEBP image")
+    ext={"JPEG":"jpg","PNG":"png","WEBP":"webp"}[image.format]
+    name=f"{uuid.uuid4().hex}.{ext}"
+    folder=PORTFOLIO_UPLOAD_DIR/f"provider_{provider.id}"
+    folder.mkdir(parents=True,exist_ok=True)
+    path=folder/name
+    path.write_bytes(raw)
+    record=models.ProviderPortfolioImage(provider_id=provider.id,storage_path=str(path),caption=caption.strip())
+    db.add(record);db.commit();db.refresh(record)
+    return {"id":record.id,"caption":record.caption,"image_url":f"/api/providers/{provider.id}/portfolio/{record.id}","created_at":record.created_at}
+
+@app.get("/api/provider/me/portfolio")
+def list_provider_portfolio(user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    records=db.query(models.ProviderPortfolioImage).filter(models.ProviderPortfolioImage.provider_id==provider.id).order_by(models.ProviderPortfolioImage.created_at.desc()).all()
+    return [{"id":r.id,"caption":r.caption,"image_url":f"/api/providers/{provider.id}/portfolio/{r.id}","created_at":r.created_at} for r in records]
+
+@app.delete("/api/provider/me/portfolio/{image_id}")
+def delete_provider_portfolio_image(image_id:int,user: models.User = Depends(require_role("provider")),db: Session = Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    record=db.query(models.ProviderPortfolioImage).filter(models.ProviderPortfolioImage.id==image_id,models.ProviderPortfolioImage.provider_id==provider.id).first()
+    if not record: raise HTTPException(404,"Portfolio image not found")
+    try: Path(record.storage_path).unlink(missing_ok=True)
+    except OSError: raise HTTPException(500,"Could not remove portfolio image file")
+    db.delete(record);db.commit();return {"message":"Portfolio image removed"}
+
+@app.get("/api/providers/{provider_id}/portfolio/{image_id}")
+def get_public_portfolio_image(provider_id:int,image_id:int,db: Session = Depends(get_db)):
+    record=db.query(models.ProviderPortfolioImage).filter(models.ProviderPortfolioImage.id==image_id,models.ProviderPortfolioImage.provider_id==provider_id).first()
+    if not record: raise HTTPException(404,"Portfolio image not found")
+    path=Path(record.storage_path)
+    if not path.is_file(): raise HTTPException(404,"Portfolio image file not found")
+    return FileResponse(path)
