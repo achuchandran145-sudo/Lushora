@@ -1111,3 +1111,56 @@ def get_public_portfolio_image(provider_id:int,image_id:int,db: Session = Depend
     path=Path(record.storage_path)
     if not path.is_file(): raise HTTPException(404,"Portfolio image file not found")
     return FileResponse(path)
+
+
+# Provider staff roster (owner-managed; staff login/RBAC is a later security phase)
+def _provider_for_owner(user,db):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    if not provider: raise HTTPException(404,"Business profile not found")
+    return provider
+
+@app.get("/api/provider/me/staff")
+def provider_staff_list(user: models.User = Depends(require_role("provider")),db: Session = Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    rows=db.query(models.ProviderStaff).filter(models.ProviderStaff.provider_id==provider.id).order_by(models.ProviderStaff.created_at.desc()).all()
+    return [{"id":r.id,"full_name":r.full_name,"role":r.role,"phone":r.phone,"is_active":r.is_active,"created_at":r.created_at} for r in rows]
+
+@app.post("/api/provider/me/staff",status_code=201)
+def provider_staff_create(payload:dict,user: models.User = Depends(require_role("provider")),db: Session = Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    name=str(payload.get("full_name","")).strip();role=str(payload.get("role","staff")).strip().lower();phone=str(payload.get("phone","")).strip()
+    if not name or len(name)>120: raise HTTPException(400,"Staff name is required and must be 120 characters or fewer")
+    if role not in {"staff","manager"}: raise HTTPException(400,"Role must be staff or manager")
+    if len(phone)>20: raise HTTPException(400,"Phone must be 20 characters or fewer")
+    row=models.ProviderStaff(provider_id=provider.id,full_name=name,role=role,phone=phone,is_active=True);db.add(row);db.commit();db.refresh(row)
+    return {"id":row.id,"full_name":row.full_name,"role":row.role,"phone":row.phone,"is_active":row.is_active,"created_at":row.created_at}
+
+@app.patch("/api/provider/me/staff/{staff_id}")
+def provider_staff_update(staff_id:int,payload:dict,user: models.User = Depends(require_role("provider")),db: Session = Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    row=db.query(models.ProviderStaff).filter(models.ProviderStaff.id==staff_id,models.ProviderStaff.provider_id==provider.id).first()
+    if not row: raise HTTPException(404,"Staff member not found")
+    if "full_name" in payload:
+        name=str(payload["full_name"]).strip()
+        if not name or len(name)>120: raise HTTPException(400,"Staff name is required and must be 120 characters or fewer")
+        row.full_name=name
+    if "role" in payload:
+        role=str(payload["role"]).strip().lower()
+        if role not in {"staff","manager"}: raise HTTPException(400,"Role must be staff or manager")
+        row.role=role
+    if "phone" in payload:
+        phone=str(payload["phone"]).strip()
+        if len(phone)>20: raise HTTPException(400,"Phone must be 20 characters or fewer")
+        row.phone=phone
+    if "is_active" in payload:
+        if not isinstance(payload["is_active"],bool): raise HTTPException(400,"is_active must be boolean")
+        row.is_active=payload["is_active"]
+    db.commit();db.refresh(row)
+    return {"id":row.id,"full_name":row.full_name,"role":row.role,"phone":row.phone,"is_active":row.is_active,"created_at":row.created_at}
+
+@app.delete("/api/provider/me/staff/{staff_id}")
+def provider_staff_delete(staff_id:int,user: models.User = Depends(require_role("provider")),db: Session = Depends(get_db)):
+    provider=_provider_for_owner(user,db)
+    row=db.query(models.ProviderStaff).filter(models.ProviderStaff.id==staff_id,models.ProviderStaff.provider_id==provider.id).first()
+    if not row: raise HTTPException(404,"Staff member not found")
+    db.delete(row);db.commit();return {"message":"Staff member removed"}
