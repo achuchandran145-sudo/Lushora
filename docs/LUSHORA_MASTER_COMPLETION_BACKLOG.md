@@ -33,6 +33,9 @@ Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires gre
 - [ ] Phase 0 sign-off only after all blocking checks have evidence; no code-presence-only sign-off.
 
 ### Additional Phase 0 remediation (2026-11-22)
+- [x] Restore verifier now validates the backup SHA-256 sidecar before restore.
+- [x] PostgreSQL CI drill compares source/restored row counts for critical tables and verifies a restored marker.
+
 - [x] Notification worker refactored to avoid import-time infinite loop, validate polling interval (1-300 seconds), and support SIGTERM/SIGINT graceful stop.
 - [x] Notification delivery tests added for retry/backoff, success after retry, exhausted attempts, and user-consent suppression.
 - [x] Worker tests added for stop behavior, session closure, and poll-interval validation.
