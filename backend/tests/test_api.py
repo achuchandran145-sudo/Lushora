@@ -297,3 +297,20 @@ def test_payment_record_is_owner_scoped_and_idempotent_pending_only():
     denied=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':stranger_headers['Authorization'],'Idempotency-Key':'stranger-key-0001'})
     assert denied.status_code==404
     assert client.get('/api/payments/me',headers=headers).status_code==200
+
+def test_cancel_booking_cancels_pending_payment_record():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Cancel Pay Customer','email':'cancel-pay@example.com','phone':'9876543292','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    p=client.get('/api/providers').json()[0];service=p['services'][0]
+    at=datetime.combine((datetime.now()+timedelta(days=9)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
+    booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Cancel Pay Customer','customer_phone':'9876543292','provider_id':p['id'],'service_id':service['id'],'appointment_at':at,'notes':''})
+    assert booking.status_code==201
+    bid=booking.json()['id']
+    pay=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'cancel-payment-0001'})
+    assert pay.status_code==201 and pay.json()['status']=='pending'
+    cancelled=client.patch(f'/api/bookings/{bid}/status?status=cancelled',headers=headers)
+    assert cancelled.status_code==200
+    history=client.get('/api/payments/me',headers=headers)
+    record=next(x for x in history.json() if x['id']==pay.json()['id'])
+    assert record['status']=='cancelled'
