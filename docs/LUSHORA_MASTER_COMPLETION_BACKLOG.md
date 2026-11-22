@@ -46,6 +46,9 @@ Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires gre
 - [ ] Secret scan results must be reviewed; any historical real secrets must be rotated, and history rewriting requires explicit approval.
 
 ### Phase 0 evidence updates (2026-11-22)
+- [x] Production now requires an absolute private portfolio upload directory outside the repository; production import no longer creates a repo-local portfolio directory. Tests added for missing and repo-local portfolio storage.
+- [x] OTP expiration, replay rejection, and OTP-disabled behavior covered by regression tests.
+
 - [x] PostgreSQL 16 client mismatch fixed and backup/restore drill now passed on latest observed CI.
 - [x] Python dependency audit passed on latest observed CI.
 - [x] Frontend build and npm audit passed on latest observed CI.
