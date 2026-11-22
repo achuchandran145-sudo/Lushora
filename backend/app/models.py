@@ -286,3 +286,11 @@ class BookingWaitlistEntry(Base):
     preferred_time_end: Mapped[str] = mapped_column(String(5), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CommissionRule(Base):
+    __tablename__ = "commission_rules"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    category: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
+    commission_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
