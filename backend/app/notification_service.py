@@ -93,7 +93,9 @@ def process_pending(db,batch_size=25):
             d.status="sent";d.provider_message_id=provider_id or "";d.last_error="";d.next_attempt_at=None;d.updated_at=datetime.utcnow()
         except Exception as exc:
             d.last_error=str(exc)[:2000];d.updated_at=datetime.utcnow()
-            if d.attempts>=MAX_ATTEMPTS: d.status="failed"
+            if "consent is disabled" in str(exc).lower():
+                d.status="suppressed";d.next_attempt_at=None
+            elif d.attempts>=MAX_ATTEMPTS: d.status="failed"
             else:
                 d.status="retry"
                 d.next_attempt_at=datetime.utcnow()+timedelta(seconds=min(3600,30*(2**(d.attempts-1))))
