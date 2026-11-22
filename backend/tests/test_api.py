@@ -114,10 +114,13 @@ def test_login_rate_limit_clears_after_successful_authentication():
     assert client.post('/api/auth/login',json={'email':'rate-clear@example.com','password':'wrong-password'}).status_code==401
 
 def test_registration_rate_limit_by_email():
-    for _ in range(5):
-        response=client.post('/api/auth/register',json={'full_name':'Spam User','email':'spam-register@example.com','phone':'9876543292','password':'StrongPass123','role':'customer'})
-        assert response.status_code==201
-    blocked=client.post('/api/auth/register',json={'full_name':'Spam User','email':'spam-register@example.com','phone':'9876543292','password':'StrongPass123','role':'customer'})
+    payload={'full_name':'Spam User','email':'spam-register@example.com','phone':'9876543292','password':'StrongPass123','role':'customer'}
+    first=client.post('/api/auth/register',json=payload)
+    assert first.status_code==201
+    # Duplicate registration responses still consume the email-scoped attempt budget.
+    for _ in range(4):
+        assert client.post('/api/auth/register',json=payload).status_code==409
+    blocked=client.post('/api/auth/register',json=payload)
     assert blocked.status_code==429
 
 def test_otp_request_rate_limit_by_phone_and_ip():
