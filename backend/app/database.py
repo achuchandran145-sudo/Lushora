@@ -78,6 +78,21 @@ def migrate_sqlite_schema():
                 conn.execute(text("CREATE INDEX ix_providers_category ON providers (category)"))
                 conn.execute(text("CREATE INDEX ix_providers_city ON providers (city)"))
 
+        if "auth_rate_limit_entries" in table_names:
+            # Repair legacy development databases that created the rate-limit table
+            # before the composite uniqueness constraint was introduced.
+            conn.execute(text("""
+                DELETE FROM auth_rate_limit_entries
+                WHERE id NOT IN (
+                    SELECT MIN(id) FROM auth_rate_limit_entries
+                    GROUP BY scope, identifier_hash
+                )
+            """))
+            conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_rate_limit_scope_identifier
+                ON auth_rate_limit_entries (scope, identifier_hash)
+            """))
+
         user_cols = {c["name"] for c in inspector.get_columns("users")}
         if "auth_token_version" not in user_cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN auth_token_version INTEGER NOT NULL DEFAULT 0"))
