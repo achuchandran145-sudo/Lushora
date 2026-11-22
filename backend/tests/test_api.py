@@ -430,3 +430,27 @@ def test_provider_availability_closure_dates_validation_and_normalization():
     assert invalid_date.status_code==400
     invalid_type=client.put('/api/provider/me/availability',headers=headers,json={'working_days':[0],'start_time':'09:00','end_time':'18:00','closed_dates':'2026-12-25'})
     assert invalid_type.status_code==400
+
+
+def test_provider_portfolio_upload_validation_and_owner_isolation():
+    from io import BytesIO
+    from PIL import Image
+    reg1=client.post('/api/auth/register',json={'full_name':'Gallery Owner One','email':'gallery-one@example.com','phone':'9876543306','password':'StrongPass123','role':'provider'})
+    reg2=client.post('/api/auth/register',json={'full_name':'Gallery Owner Two','email':'gallery-two@example.com','phone':'9876543307','password':'StrongPass123','role':'provider'})
+    h1={'Authorization':f"Bearer {reg1.json()['access_token']}"};h2={'Authorization':f"Bearer {reg2.json()['access_token']}"}
+    p1=client.post('/api/provider/register',headers=h1,json={'name':'Gallery Studio One','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':''})
+    p2=client.post('/api/provider/register',headers=h2,json={'name':'Gallery Studio Two','category':'Salon','city':'Chennai','locality':'Adyar','description':''})
+    image_bytes=BytesIO();Image.new('RGB',(40,40),'white').save(image_bytes,format='PNG');image_bytes.seek(0)
+    upload=client.post('/api/provider/me/portfolio',headers=h1,files={'file':('portfolio.png',image_bytes.getvalue(),'image/png')},data={'caption':'Studio work'})
+    assert upload.status_code==201
+    image_id=upload.json()['id']
+    assert client.get('/api/provider/me/portfolio',headers=h1).json()[0]['caption']=='Studio work'
+    public=client.get(upload.json()['image_url'])
+    assert public.status_code==200 and public.headers['content-type'].startswith('image/')
+    invalid=client.post('/api/provider/me/portfolio',headers=h1,files={'file':('bad.jpg',b'not-an-image','image/jpeg')})
+    assert invalid.status_code==400
+    foreign_delete=client.delete(f'/api/provider/me/portfolio/{image_id}',headers=h2)
+    assert foreign_delete.status_code==404
+    deleted=client.delete(f'/api/provider/me/portfolio/{image_id}',headers=h1)
+    assert deleted.status_code==200
+    assert client.get(upload.json()['image_url']).status_code==404
