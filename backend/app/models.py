@@ -236,3 +236,12 @@ class Refund(Base):
     reviewer_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reviewer_note: Mapped[str] = mapped_column(Text, default="", nullable=False)
     external_reference: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+
+
+class ProviderPortfolioImage(Base):
+    __tablename__ = "provider_portfolio_images"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), index=True, nullable=False)
+    storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    caption: Mapped[str] = mapped_column(String(240), default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
