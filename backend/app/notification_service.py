@@ -21,7 +21,7 @@ def channel_configured(channel):
 def create_delivery_records(db,notification,preference=None):
     from . import models
     for channel in CHANNELS:
-        enabled=getattr(preference,f"{channel}_enabled",True) if preference else True
+        enabled=bool(getattr(preference,f"{channel}_enabled",False)) if preference else False
         configured=channel_configured(channel)
         status="queued" if enabled and configured else ("suppressed" if not enabled else "not_configured")
         db.add(models.NotificationDelivery(notification_id=notification.id,user_id=notification.recipient_user_id,channel=channel,status=status,last_error="" if status!="not_configured" else "Channel credentials are not configured"))
@@ -70,6 +70,12 @@ def dispatch_delivery(db,delivery):
     notification=db.query(models.Notification).filter_by(id=delivery.notification_id).first()
     user=db.query(models.User).filter_by(id=delivery.user_id).first()
     if not notification or not user: raise RuntimeError("Notification recipient or notification not found")
+    preference=db.query(models.NotificationPreference).filter_by(user_id=user.id).first()
+    if not preference or not bool(getattr(preference,f"{delivery.channel}_enabled",False)):
+        delivery.status="suppressed"
+        delivery.last_error="User consent is not enabled for this channel"
+        delivery.next_attempt_at=None
+        raise RuntimeError("Notification channel consent is disabled")
     if delivery.channel=="push": return _send_push(db,delivery,notification,user)
     if delivery.channel=="whatsapp": return _send_whatsapp(delivery,notification,user)
     if delivery.channel=="sms": return _send_sms(delivery,notification,user)
