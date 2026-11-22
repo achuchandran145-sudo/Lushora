@@ -49,6 +49,13 @@ jobs:
         run: pip install pip-audit && pip-audit -r backend/requirements.txt
       - name: Install PostgreSQL client tools
         run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          test -x /usr/lib/postgresql/16/bin/pg_dump
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+      - name: Install PostgreSQL client tools
+        run: |
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
           echo 'deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
@@ -63,6 +70,7 @@ jobs:
           LUSHORA_BACKUP_DIR: ${{ runner.temp }}/lushora-ci-backups
           LUSHORA_BACKUP_RETENTION_DAYS: 7
           PGPASSWORD: lushora_ci_password
+          PATH: /usr/lib/postgresql/16/bin:${{ env.PATH }}
         run: |
           python -m alembic -c alembic.ini upgrade head
           PG_SOURCE_URL="${LUSHORA_DATABASE_URL/postgresql+psycopg:/postgresql:}"
