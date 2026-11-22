@@ -170,3 +170,26 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.get_by_role("button", name="SIGN IN").click()
     browser.wait_for_url("**/admin", timeout=15000)
     assert browser.get_by_role("heading", name="Dashboard").count() == 1
+
+
+def test_homepage_and_customer_login_accessibility_audit(browser, e2e_servers):
+    axe_script = FRONTEND / "node_modules" / "axe-core" / "axe.min.js"
+    assert axe_script.exists(), "CI must install axe-core before browser E2E"
+    violations = []
+    for route in ("/", "/customer/login"):
+        browser.goto(e2e_servers["web"] + route)
+        browser.add_script_tag(path=str(axe_script))
+        results = browser.evaluate("""async () => {
+            const result = await axe.run(document, {
+                runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] }
+            });
+            return result.violations.map(v => ({
+                id: v.id,
+                impact: v.impact,
+                description: v.description,
+                nodes: v.nodes.map(n => ({ target: n.target, summary: n.failureSummary }))
+            }));
+        }""")
+        violations.extend({"route": route, **v} for v in results)
+    serious = [v for v in violations if v["impact"] in ("serious", "critical")]
+    assert not serious, "Serious/critical accessibility violations: " + str(serious)
