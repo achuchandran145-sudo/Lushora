@@ -650,8 +650,10 @@ def test_staff_specific_booking_capacity_and_slot_filtering():
     assert client.post('/api/provider/register',headers=headers,json={'name':'Staff Booking Studio','category':'Salon','city':'Coimbatore','locality':'Vadavalli','description':''}).status_code==201
     staff_a=client.post('/api/provider/me/staff',headers=headers,json={'full_name':'Staff A','role':'staff','phone':'9876543328'}).json()
     staff_b=client.post('/api/provider/me/staff',headers=headers,json={'full_name':'Staff B','role':'staff','phone':'9876543329'}).json()
-    provider=client.get('/api/provider/me',headers=headers).json();service=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()
-    owned=next(p for p in service if p['id']==provider['id']);svc=owned['services'][0]
+    provider=client.get('/api/provider/me',headers=headers).json()
+    from app.models import Provider
+    session=SessionLocal();row=session.query(Provider).filter_by(id=provider['id']).first();row.approval_status='approved';session.commit();session.close()
+    service=client.post('/api/provider/me/services',headers=headers,params={'name':'Staff Booking Service','price_inr':1000,'duration_minutes':30});assert service.status_code==201;svc=service.json()
     at=datetime.combine((datetime.now()+timedelta(days=27)).date(),datetime.strptime('10:00','%H:%M').time())
     def payload(staff):return {'customer_name':'Staff Customer','customer_phone':'9876543330','provider_id':provider['id'],'service_id':svc['id'],'appointment_at':at.isoformat(),'staff_id':staff['id']}
     first=client.post('/api/bookings',json=payload(staff_a));assert first.status_code==201
