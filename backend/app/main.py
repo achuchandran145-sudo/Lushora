@@ -51,6 +51,9 @@ def _validate_production_settings() -> None:
         raise RuntimeError("Production must disable development OTP mode (LUSHORA_OTP_DEV_MODE=false).")
     if not _CORS_ORIGINS:
         raise RuntimeError("Production requires LUSHORA_CORS_ORIGINS to contain trusted frontend origins.")
+    for origin in _CORS_ORIGINS:
+        if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?", origin) or "*" in origin:
+            raise RuntimeError("Production CORS origins must be valid HTTPS origins without wildcard or localhost.")
     from .database import DATABASE_URL
     if not DATABASE_URL.startswith(("postgresql://", "postgresql+")):
         raise RuntimeError("Production requires PostgreSQL; SQLite and unvalidated database engines are development-only.")
