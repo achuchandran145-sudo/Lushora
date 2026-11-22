@@ -64,6 +64,9 @@ jobs:
       - name: Install frontend dependencies for browser E2E
         working-directory: frontend
         run: npm ci
+      - name: Install axe accessibility audit dependency
+        working-directory: frontend
+        run: npm install --no-save --package-lock=false axe-core
       - name: Run backend tests
         working-directory: backend
         env:
