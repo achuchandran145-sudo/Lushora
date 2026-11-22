@@ -14,6 +14,8 @@ jobs:
           python-version: '3.13'
       - name: Install backend requirements
         run: pip install -r backend/requirements.txt
+      - name: Install Chromium for browser E2E
+        run: python -m playwright install --with-deps chromium
       - name: Validate operational scripts
         working-directory: backend
         run: bash -n scripts/migrate_production.sh scripts/backup_postgres.sh scripts/restore_verify_postgres.sh
