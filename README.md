@@ -50,6 +50,34 @@ Initial categories: **Makeup, Salon, Skin Clinic, Nail Studio**. Initial target 
 - Backend must set `LUSHORA_CORS_ORIGINS` to the exact deployed frontend origin(s), comma-separated. Localhost development origins are retained by default.
 - A browser **Failed to fetch** error can still occur if the API URL is missing/wrong, backend is unavailable, or the deployed frontend origin is not in the backend CORS allow-list.
 
+## Production foundation/security gates
+
+Production startup is intentionally fail-closed. Production must use PostgreSQL with Alembic migrations, a strong `LUSHORA_AUTH_SECRET`, development OTP disabled, exact HTTPS CORS origins, a private absolute verification-document storage directory outside the repository, and a private absolute backup directory with at least 7-day retention configured.
+
+### Production migration
+
+From `backend`, set `LUSHORA_DATABASE_URL` to a PostgreSQL URL using the installed psycopg driver, then run:
+
+```bash
+./scripts/migrate_production.sh
+```
+
+The API will refuse to start in production until the Alembic version table exists and contains an applied revision. Do not run the API before migrations.
+
+### Backup and restore verification
+
+```bash
+./scripts/backup_postgres.sh
+```
+
+For restore verification, use a disposable PostgreSQL database only:
+
+```bash
+LUSHORA_RESTORE_DATABASE_URL='postgresql+psycopg://...' BACKUP_FILE='/private/backup/lushora-YYYYMMDDTHHMMSSZ.dump' ./scripts/restore_verify_postgres.sh
+```
+
+Backups must be scheduled by the deployment platform and tested periodically. These scripts do not create a schedule or prove that a cloud backup destination is configured. Production infrastructure, real backup/restore drills, SMS provider, and penetration testing remain external verification requirements.
+
 ## Tech stack
 | Component | Stack |
 |---|---|
