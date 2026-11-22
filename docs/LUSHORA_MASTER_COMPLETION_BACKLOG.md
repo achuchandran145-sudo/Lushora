@@ -46,7 +46,7 @@ Audit findings: current slot generation uses 30-minute stepping and naive server
 - [x] Payment record status/idempotency foundation (pending, cancellation, refund states; gateway lifecycle/webhooks remain pending)
 - [ ] Failed/pending payment recovery
 - [x] Refund request/review workflow foundation (manual; gateway refund execution and partial-refund accounting remain pending)
-- [ ] Platform commission rules
+- [x] Admin-configurable category commission rules (0–30%; API/UI and role/validation regression tests; not yet applied to collected payments or payout calculations)
 - [ ] Provider payout calculation and payout operations
 - [x] Admin payment ledger and summary with read-only reconciliation foundation (gateway settlement matching remains pending)
 - [ ] Customer receipt/invoice
