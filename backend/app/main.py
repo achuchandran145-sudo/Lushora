@@ -551,6 +551,15 @@ def _normalize_phone(phone: str) -> str:
     return "+91" + digits
 
 
+def _audit_security_event(db: Session, event_type: str, identifier: str = "", ip: str = "", user_id: int | None = None):
+    db.add(models.SecurityAuditEvent(
+        user_id=user_id,
+        event_type=event_type,
+        identifier_hash=_rate_limit_identifier(identifier) if identifier else "",
+        ip_hash=_rate_limit_identifier(ip) if ip else ""
+    ))
+    db.commit()
+
 def _rate_limit_identifier(identifier: str) -> str:
     return hmac.new(AUTH_SECRET, str(identifier).strip().lower().encode(), hashlib.sha256).hexdigest()
 
@@ -616,11 +625,13 @@ def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, wind
 def _check_auth_limit(db: Session, scope: str, identifier: str, limit: int, window_seconds: int):
     allowed, retry_after = _rate_limit_state(db, scope, identifier, limit, window_seconds)
     if not allowed:
+        _audit_security_event(db, "auth_rate_limited", identifier, identifier if "ip" in scope else "")
         raise HTTPException(429, "Too many authentication attempts. Please try again later.", headers={"Retry-After": str(retry_after)})
 
 def _consume_auth_limit(db: Session, scope: str, identifier: str, limit: int, window_seconds: int):
     allowed, retry_after = _rate_limit_state(db, scope, identifier, limit, window_seconds, consume=True)
     if not allowed:
+        _audit_security_event(db, "auth_rate_limited", identifier, identifier if "ip" in scope else "")
         raise HTTPException(429, "Too many authentication attempts. Please try again later.", headers={"Retry-After": str(retry_after)})
 
 def _clear_auth_limit(db: Session, scope: str, identifier: str):
@@ -650,6 +661,7 @@ def customer_otp_request(payload: dict, request: Request, db: Session = Depends(
     code = f"{secrets.randbelow(1000000):06d}"
     db.add(models.OTPChallenge(phone=phone, code_hash=_otp_digest(phone, code), expires_at=datetime.utcnow() + timedelta(minutes=OTP_TTL_MINUTES)))
     db.commit()
+    _audit_security_event(db, "otp_requested", phone, ip)
     return {"message": "Development OTP generated. SMS delivery is not connected yet.", "development_otp": code if OTP_DEV_MODE else None, "expires_in_seconds": OTP_TTL_MINUTES * 60}
 
 
@@ -673,6 +685,7 @@ def customer_otp_verify(payload: dict, request: Request, db: Session = Depends(g
         db.commit()
         _consume_auth_limit(db, "otp_verify_phone_hour", phone, 10, 3600)
         _consume_auth_limit(db, "otp_verify_ip_hour", ip, 30, 3600)
+        _audit_security_event(db, "otp_verify_failed", phone, ip)
         raise HTTPException(401, "Incorrect OTP")
     challenge.consumed = True
     _clear_auth_limit(db, "otp_verify_phone_hour", phone)
@@ -682,6 +695,7 @@ def customer_otp_verify(payload: dict, request: Request, db: Session = Depends(g
         user = models.User(full_name="LUSHORA Customer", email=placeholder_email, phone=phone, password_hash=_password_hash(secrets.token_urlsafe(32)), role="customer", is_active=True)
         db.add(user); db.flush()
     db.commit(); db.refresh(user)
+    _audit_security_event(db, "otp_verify_success", phone, ip, user.id)
     return {"access_token": _make_token(user.id, user.auth_token_version), "token_type": "bearer", "user": user}
 
 
@@ -697,6 +711,7 @@ def register(payload: schemas.RegisterIn, request: Request, db: Session = Depend
     if db.query(models.User).filter(models.User.email == email).first(): raise HTTPException(409, "Email already registered")
     user = models.User(full_name=payload.full_name.strip(), email=email, phone=payload.phone.strip(), password_hash=_password_hash(payload.password), role=payload.role)
     db.add(user); db.commit(); db.refresh(user)
+    _audit_security_event(db, "registration_success", email, ip, user.id)
     return {"access_token": _make_token(user.id, user.auth_token_version), "user": user}
 
 @app.post("/api/auth/login", response_model=schemas.TokenOut)
@@ -709,15 +724,23 @@ def login(payload: schemas.LoginIn, request: Request, db: Session = Depends(get_
     if not user or not _password_verify(payload.password, user.password_hash) or not user.is_active:
         _consume_auth_limit(db, "login_email_failures", email, 5, 900)
         _consume_auth_limit(db, "login_ip_failures", ip, 20, 900)
+        _audit_security_event(db, "login_failed", email, ip)
         raise HTTPException(401, "Email or password is incorrect")
     _clear_auth_limit(db, "login_email_failures", email)
-    return {"access_token": _make_token(user.id), "user": user}
+    _audit_security_event(db, "login_success", email, ip, user.id)
+    return {"access_token": _make_token(user.id, user.auth_token_version), "user": user}
 
 @app.post("/api/auth/logout")
 def logout(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
     user.auth_token_version = int(user.auth_token_version or 0) + 1
     db.commit()
+    _audit_security_event(db, "logout", str(user.id), "", user.id)
     return {"message": "Logged out. Existing access tokens are revoked."}
+
+@app.get("/api/admin/security/audit")
+def admin_security_audit(limit: int = Query(default=100, ge=1, le=200), offset: int = Query(default=0, ge=0), user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    rows=db.query(models.SecurityAuditEvent).order_by(models.SecurityAuditEvent.created_at.desc()).offset(offset).limit(limit).all()
+    return [{"id":row.id,"event_type":row.event_type,"user_id":row.user_id,"identifier_hash":row.identifier_hash,"ip_hash":row.ip_hash,"created_at":row.created_at.isoformat()} for row in rows]
 
 @app.get("/api/auth/me", response_model=schemas.UserOut)
 def me(user: models.User = Depends(current_user)):
