@@ -408,7 +408,7 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
         availability=json.loads(provider.availability_config or "{}")
     except Exception:
         availability={}
-    availability=availability or {"working_days":[0,1,2,3,4,5],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
+    availability=availability or {"working_days":[0,1,2,3,4,5,6],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
     appointment_day=payload.appointment_at.date()
     appointment_date=appointment_day.isoformat()
     if appointment_day.weekday() not in availability.get("working_days",[]): raise HTTPException(400,"Provider is closed on the selected day")
