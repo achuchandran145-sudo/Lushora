@@ -59,6 +59,7 @@ def migrate_sqlite_schema():
                         verified BOOLEAN NOT NULL DEFAULT 0,
                         rating FLOAT NOT NULL DEFAULT 0.0,
                         availability_config TEXT NOT NULL DEFAULT '{}',
+                        booking_lock_version INTEGER NOT NULL DEFAULT 0,
                         FOREIGN KEY(owner_user_id) REFERENCES users(id)
                     )
                 """))
@@ -106,3 +107,8 @@ def migrate_sqlite_schema():
         booking_cols = {c["name"] for c in inspector.get_columns("bookings")} if "bookings" in table_names else set()
         if "customer_user_id" not in booking_cols:
             conn.execute(text("ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER"))
+        if "expires_at" not in booking_cols:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN expires_at DATETIME"))
+        provider_cols = {c["name"] for c in inspector.get_columns("providers")} if "providers" in table_names else set()
+        if "booking_lock_version" not in provider_cols:
+            conn.execute(text("ALTER TABLE providers ADD COLUMN booking_lock_version INTEGER NOT NULL DEFAULT 0"))
