@@ -31,7 +31,8 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [ ] Break/holiday/closure integration
 - [ ] Booking confirmation UX and statuses
 - [ ] Reschedule flow and policy
-- [ ] Customer/provider cancellation policies and fee hooks
+- [x] Booking cancellation role/ownership/lifecycle validation and regression test
+- [ ] Customer/provider cancellation policies and fee hooks (policy/fees not implemented)
 - [ ] Booking expiration/timeout
 - [ ] Waitlist
 - [ ] Booking calendar UI
