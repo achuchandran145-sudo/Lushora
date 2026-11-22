@@ -29,10 +29,10 @@ except Exception: pass
 app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and wellness discovery and booking MVP")
 # Configure production frontend origins through LUSHORA_CORS_ORIGINS (comma-separated).
 _CORS_ORIGINS=[origin.strip().rstrip("/") for origin in os.getenv("LUSHORA_CORS_ORIGINS","").split(",") if origin.strip()]
-_CORS_ORIGINS.extend(["http://localhost:5173","http://127.0.0.1:5173"])
+if os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() != "production":\n    _CORS_ORIGINS.extend(["http://localhost:5173","http://127.0.0.1:5173"])
 app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGINS)), allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?", allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()
+AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()\n\ndef _is_production_environment() -> bool:\n    return os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() == "production"\n\ndef _validate_production_settings() -> None:\n    if not _is_production_environment():\n        return\n    if len(AUTH_SECRET) < 32 or AUTH_SECRET == b"development-only-change-this-secret":\n        raise RuntimeError("Production requires LUSHORA_AUTH_SECRET to be a strong secret of at least 32 bytes.")\n    if OTP_DEV_MODE if "OTP_DEV_MODE" in globals() else os.getenv("LUSHORA_OTP_DEV_MODE", "true").lower() == "true":\n        raise RuntimeError("Production must disable development OTP mode (LUSHORA_OTP_DEV_MODE=false).")
 TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
 LUSHORA_LOCAL_TZ = ZoneInfo('Asia/Kolkata')
 BOOKING_SLOT_STEP_MINUTES = 30
