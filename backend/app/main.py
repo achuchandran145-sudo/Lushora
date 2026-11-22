@@ -63,6 +63,13 @@ BOOKING_SLOT_STEP_MINUTES = 30
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
 
+def _password_policy_valid(password: str) -> bool:
+    return (len(password) >= 12 and len(password) <= 128
+            and any(ch.islower() for ch in password)
+            and any(ch.isupper() for ch in password)
+            and any(ch.isdigit() for ch in password)
+            and any(not ch.isalnum() for ch in password))
+
 def _password_hash(password: str) -> str:
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 180000)
@@ -118,8 +125,10 @@ def bootstrap_admin_from_environment():
     migrate_sqlite_schema()
     email = os.getenv("LUSHORA_ADMIN_EMAIL", "").strip().lower()
     password = os.getenv("LUSHORA_ADMIN_PASSWORD", "")
-    if not email or not password or len(password) < 12:
+    if not email or not password:
         return
+    if not _password_policy_valid(password):
+        raise RuntimeError("LUSHORA_ADMIN_PASSWORD must meet the strong password policy before admin bootstrap.")
     db = next(get_db())
     try:
         existing = db.query(models.User).filter(models.User.email == email).first()
