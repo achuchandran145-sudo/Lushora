@@ -160,6 +160,9 @@ def bootstrap_admin_from_environment():
         cleanup_db.query(models.AuthRateLimitEntry).filter(
             models.AuthRateLimitEntry.window_started_at < datetime.utcnow() - timedelta(days=7)
         ).delete(synchronize_session=False)
+        cleanup_db.query(models.SecurityAuditEvent).filter(
+            models.SecurityAuditEvent.created_at < datetime.utcnow() - timedelta(days=90)
+        ).delete(synchronize_session=False)
         cleanup_db.commit()
     finally:
         cleanup_db.close()
