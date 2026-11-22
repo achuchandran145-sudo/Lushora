@@ -206,3 +206,17 @@ class Review(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
     provider_reply: Mapped[str] = mapped_column(Text, default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), index=True, nullable=False)
+    customer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    amount_inr: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="pending", index=True, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    gateway: Mapped[str] = mapped_column(String(30), default="unconfigured", nullable=False)
+    gateway_reference: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
