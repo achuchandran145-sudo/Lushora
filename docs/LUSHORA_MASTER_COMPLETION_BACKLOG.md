@@ -42,16 +42,16 @@ Audit findings: current slot generation uses 30-minute stepping and naive server
 ## Phase 3 — Payments & finance
 - [ ] Gateway selection/configuration and sandbox integration
 - [ ] Payment intent/order creation and secure verification/webhook handling
-- [ ] Advance/full payment options
-- [ ] Payment status lifecycle and idempotency
+- [x] Full payment and 20% advance payment record options (remaining balance tracked; no gateway collection yet)
+- [x] Payment record status/idempotency foundation (pending, cancellation, refund states; gateway lifecycle/webhooks remain pending)
 - [ ] Failed/pending payment recovery
 - [x] Refund request/review workflow foundation (manual; gateway refund execution and partial-refund accounting remain pending)
 - [ ] Platform commission rules
 - [ ] Provider payout calculation and payout operations
-- [ ] Transaction ledger and reconciliation
+- [x] Admin payment ledger and summary with read-only reconciliation foundation (gateway settlement matching remains pending)
 - [ ] Customer receipt/invoice
 - [ ] Admin finance dashboard and audit trail
-- [ ] Payment tests (sandbox; live credentials need user setup)
+- [x] Payment record tests for owner scope, idempotency, pending duplicate prevention, cancellation and full/advance amount calculations; sandbox/live gateway tests blocked until gateway configured
 
 ## Phase 4 — Reviews & reputation
 - [x] Review model/API foundation
