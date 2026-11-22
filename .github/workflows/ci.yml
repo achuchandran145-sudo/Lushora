@@ -4,6 +4,9 @@ on:
     branches: [main, chandran-work, lushora-premium-v2]
   pull_request:
     branches: [main, chandran-work]
+concurrency:
+  group: lushora-ci-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   backend-tests:
     runs-on: ubuntu-22.04
