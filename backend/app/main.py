@@ -106,6 +106,12 @@ def update_customer_profile(payload: dict, user: models.User = Depends(require_r
     locality = str(payload.get("locality", "")).strip()
     if not all([first, last, street, city, locality]):
         raise HTTPException(400, "Please complete all profile and address fields")
+    if len(first) > 80 or len(last) > 80:
+        raise HTTPException(400, "First and last names must be 80 characters or fewer")
+    if len(street) > 500:
+        raise HTTPException(400, "Street address must be 500 characters or fewer")
+    if len(locality) > 120:
+        raise HTTPException(400, "Locality must be 120 characters or fewer")
     if city not in {"Chennai", "Coimbatore", "Tiruvannamalai"}:
         raise HTTPException(400, "Select a supported city")
     user.first_name, user.last_name = first, last
