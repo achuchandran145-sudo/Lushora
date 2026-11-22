@@ -119,7 +119,7 @@ def update_customer_profile(payload: dict, user: models.User = Depends(require_r
 
 
 @app.post("/api/payments",status_code=201)
-def create_payment(payload:dict,user:models.User=Depends(get_current_user),db:Session=Depends(get_db),idempotency_key:str=Header(...,alias="Idempotency-Key")):
+def create_payment(payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db),idempotency_key:str=Header(...,alias="Idempotency-Key")):
     key=idempotency_key.strip()
     if len(key)<8 or len(key)>120: raise HTTPException(400,"Idempotency-Key must be 8 to 120 characters")
     existing=db.query(models.Payment).filter(models.Payment.idempotency_key==key).first()
