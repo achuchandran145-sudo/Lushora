@@ -8,9 +8,9 @@ Mark a task DONE only after implementation, automated tests, frontend production
 ## Phase 0 — Existing foundation audit (REMEDIATION IN PROGRESS)
 Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires green CI on the latest branch head plus the checklist evidence below.
 
-**Final verification snapshot:** latest branch head `a3fafbe8b872d8e1ce7aa2ebc879427c454eaf07` has successful required CI runs:
-https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040487482
-https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040482252
+**Final verification snapshot:** latest branch head `a1443e9803c9bce0d6e8c8a4a54aa7e48f4e4d1` has successful required CI runs:
+https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041268844
+https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041264031
 
 Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly environment-dependent release validations.
 
@@ -84,7 +84,7 @@ Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly env
 - [x] Frontend production build: PASS.
 - [x] npm audit: 0 vulnerabilities.
 - [x] pip-audit: no known vulnerabilities.
-- [x] GitHub Actions latest-head CI: PASS — runs https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040487482 and https://github.com/achuchandran145-sudo/Lushora/actions/runs/45040482252 for commit a3fafbe8b872d8e1ce7aa2ebc879427c454eaf07.
+- [x] GitHub Actions latest-head CI: PASS — runs https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041268844 and https://github.com/achuchandran145-sudo/Lushora/actions/runs/45041264031 for commit a1443e9803c9bce0d6e8c8a4a54aa7e48f4e4d1.
 - [x] Gitleaks repository and history scan: PASS — successful CI step `Scan repository and Git history for secrets`.
 - [x] PostgreSQL 16 migration and backup/restore CI drill: PASS — successful CI step `Run PostgreSQL migration and backup/restore drill`.
 - [x] Backend tests, Playwright/browser E2E, Python audit, operational scripts, npm audit and frontend build: PASS in the successful final-commit CI run.
