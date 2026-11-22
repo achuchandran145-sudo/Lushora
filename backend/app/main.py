@@ -284,8 +284,8 @@ def me(user: models.User = Depends(current_user)):
 
 @app.post("/api/provider/register", status_code=201)
 def provider_registration(payload: schemas.ProviderRegistrationIn, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
-    existing = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id).first()
-    if existing: raise HTTPException(409, "A business profile already exists for this account")
+    existing = db.query(models.Provider).filter(models.Provider.owner_user_id == user.id, models.Provider.category == payload.category).first()
+    if existing: raise HTTPException(409, "A business profile already exists for this account in this category")
     provider = models.Provider(owner_user_id=user.id, approval_status="pending", verified=False, name=payload.name, category=payload.category, city=payload.city, locality=payload.locality, description=payload.description)
     db.add(provider); db.commit(); db.refresh(provider)
     return {"id": provider.id, "approval_status": provider.approval_status, "message": "Business submitted for admin approval"}
