@@ -30,8 +30,8 @@ Audit findings: current slot generation uses 30-minute stepping and naive server
 - [x] Prevent double-booking under concurrent requests (provider-row lock/version update; concurrent-request regression test passes CI)
 - [ ] Staff-specific availability
 - [ ] Break/holiday/closure integration
-- [ ] Booking confirmation UX and statuses
-- [ ] Reschedule flow and policy
+- [x] Booking confirmation UX and statuses (requested/confirmed/rejected/completed/cancelled lifecycle and role checks)
+- [x] Reschedule flow (customer/provider UI and API; validates availability, conflicts, owner access and 30-minute grid)
 - [x] Booking cancellation role/ownership/lifecycle validation and regression test
 - [ ] Customer/provider cancellation policies and fee hooks (policy/fees not implemented)
 - [ ] Booking expiration/timeout
