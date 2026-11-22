@@ -153,6 +153,13 @@ This is a development MVP, **not production-ready**. Do not use real sensitive i
 This framework tracks channel readiness and creates delivery-log records. It does not yet dispatch external messages. Provider adapters, worker, retries, and delivery receipts remain to be implemented. Credentials are not stored in Git.
 
 
+### Firebase Web Push setup (optional)
+To enable customer browser push notifications, configure the frontend environment:
+- `VITE_FIREBASE_WEB_CONFIG`: Firebase web app config JSON (public client config)
+- `VITE_FIREBASE_VAPID_KEY`: Firebase Cloud Messaging Web Push public VAPID key
+
+Customers sign in, opt in under Notification Preferences, and grant browser permission. LUSHORA registers the FCM token with the backend. Turning Push off disables the preference and deactivates the browser token. Browser push requires HTTPS (localhost is allowed for development).
+
 ## External notification delivery (backend framework)
 
 The notification worker is a separate process and must run alongside the API:
