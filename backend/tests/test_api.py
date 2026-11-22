@@ -974,3 +974,37 @@ def test_customer_otp_request_is_disabled_when_development_mode_is_off(monkeypat
     response = client.post('/api/v2/customer/otp/request', json={'phone':'9876543352'})
     assert response.status_code == 503
     assert 'SMS OTP delivery is not configured' in response.text
+
+
+def test_production_requires_private_portfolio_storage(monkeypatch, tmp_path):
+    import app.main as main_module
+    monkeypatch.setenv('APP_ENV','production')
+    monkeypatch.setattr(main_module,'AUTH_SECRET',b'a'*40)
+    monkeypatch.setattr(main_module,'OTP_DEV_MODE',False)
+    monkeypatch.setattr(main_module,'_CORS_ORIGINS',['https://lushora.example'])
+    monkeypatch.setattr(main_module,'DATABASE_URL','postgresql://user:password@db.example/lushora')
+    verification=tmp_path/'verification';verification.mkdir(mode=0o700)
+    backup=tmp_path/'backup';backup.mkdir(mode=0o700)
+    monkeypatch.setenv('LUSHORA_VERIFICATION_UPLOAD_DIR',str(verification))
+    monkeypatch.setenv('LUSHORA_BACKUP_DIR',str(backup))
+    monkeypatch.setenv('LUSHORA_BACKUP_RETENTION_DAYS','7')
+    monkeypatch.delenv('LUSHORA_PORTFOLIO_UPLOAD_DIR',raising=False)
+    with pytest.raises(RuntimeError,match='LUSHORA_PORTFOLIO_UPLOAD_DIR'):
+        main_module._validate_production_settings()
+
+
+def test_production_rejects_repo_local_portfolio_storage(monkeypatch, tmp_path):
+    import app.main as main_module
+    monkeypatch.setenv('APP_ENV','production')
+    monkeypatch.setattr(main_module,'AUTH_SECRET',b'a'*40)
+    monkeypatch.setattr(main_module,'OTP_DEV_MODE',False)
+    monkeypatch.setattr(main_module,'_CORS_ORIGINS',['https://lushora.example'])
+    monkeypatch.setattr(main_module,'DATABASE_URL','postgresql://user:password@db.example/lushora')
+    verification=tmp_path/'verification';verification.mkdir(mode=0o700)
+    backup=tmp_path/'backup';backup.mkdir(mode=0o700)
+    monkeypatch.setenv('LUSHORA_VERIFICATION_UPLOAD_DIR',str(verification))
+    monkeypatch.setenv('LUSHORA_BACKUP_DIR',str(backup))
+    monkeypatch.setenv('LUSHORA_BACKUP_RETENTION_DAYS','7')
+    monkeypatch.setenv('LUSHORA_PORTFOLIO_UPLOAD_DIR',str(main_module.Path(__file__).resolve().parents[2]/'portfolio_uploads'))
+    with pytest.raises(RuntimeError,match='application repository'):
+        main_module._validate_production_settings()
