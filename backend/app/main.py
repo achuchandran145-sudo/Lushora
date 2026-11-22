@@ -556,6 +556,33 @@ def _expire_stale_bookings(db:Session,provider_id:int|None=None):
             _create_notification(db,provider.owner_user_id,"Booking request expired",f"Booking request #{booking.id} expired after 24 hours without confirmation.","booking_status",booking.id)
     return len(stale)
 
+
+@app.post("/api/customer/me/waitlist",response_model=schemas.WaitlistOut,status_code=201)
+def create_waitlist_entry(payload:schemas.WaitlistCreate,user:models.User=Depends(require_role("customer")),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.id==payload.provider_id).first()
+    service=db.query(models.Service).filter(models.Service.id==payload.service_id,models.Service.provider_id==payload.provider_id).first()
+    if not provider or not service: raise HTTPException(404,"Provider or service not found")
+    if payload.preferred_date.tzinfo is not None: raise HTTPException(400,"Preferred date must be local India time without timezone offset")
+    if payload.preferred_date.date()<=datetime.now(LUSHORA_LOCAL_TZ).date(): raise HTTPException(400,"Preferred date must be in the future")
+    for value in [payload.preferred_time_start,payload.preferred_time_end]:
+        if value and (len(value)!=5 or value[2]!=':' or not value[:2].isdigit() or not value[3:].isdigit() or int(value[:2])>23 or int(value[3:])>59): raise HTTPException(400,"Time preference must use HH:MM format")
+    if payload.preferred_time_start and payload.preferred_time_end and payload.preferred_time_start>=payload.preferred_time_end: raise HTTPException(400,"Preferred time range start must be before end")
+    duplicate=db.query(models.BookingWaitlistEntry).filter_by(customer_user_id=user.id,provider_id=provider.id,service_id=service.id,preferred_date=payload.preferred_date,status="active").first()
+    if duplicate: raise HTTPException(409,"You already have an active waitlist entry for this provider, service and date")
+    entry=models.BookingWaitlistEntry(customer_user_id=user.id,provider_id=provider.id,service_id=service.id,preferred_date=payload.preferred_date,preferred_time_start=payload.preferred_time_start,preferred_time_end=payload.preferred_time_end,status="active")
+    db.add(entry);db.commit();db.refresh(entry);return entry
+
+@app.get("/api/customer/me/waitlist",response_model=list[schemas.WaitlistOut])
+def list_waitlist_entries(user:models.User=Depends(require_role("customer")),db:Session=Depends(get_db)):
+    return db.query(models.BookingWaitlistEntry).filter_by(customer_user_id=user.id).order_by(models.BookingWaitlistEntry.created_at.desc()).all()
+
+@app.delete("/api/customer/me/waitlist/{entry_id}")
+def cancel_waitlist_entry(entry_id:int,user:models.User=Depends(require_role("customer")),db:Session=Depends(get_db)):
+    entry=db.query(models.BookingWaitlistEntry).filter_by(id=entry_id,customer_user_id=user.id).first()
+    if not entry: raise HTTPException(404,"Waitlist entry not found")
+    if entry.status!="active": raise HTTPException(400,"Waitlist entry is not active")
+    entry.status="cancelled";db.commit();return {"message":"Waitlist entry cancelled"}
+
 @app.post("/api/bookings", response_model=schemas.BookingOut, status_code=201)
 def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db), authorization: str | None = Header(default=None)):
     provider = db.query(models.Provider).filter(models.Provider.id == payload.provider_id).first()
