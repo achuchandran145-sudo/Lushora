@@ -340,3 +340,9 @@ def test_admin_payment_summary_is_forbidden_to_customer():
     headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
     response=client.get('/api/admin/payments/summary',headers=headers)
     assert response.status_code==403
+
+def test_admin_payment_reconciliation_is_forbidden_to_customer():
+    customer=client.post('/api/auth/register',json={'full_name':'Recon Guard','email':'recon-guard@example.com','phone':'9876543296','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    response=client.get('/api/admin/payments/reconciliation',headers=headers)
+    assert response.status_code==403
