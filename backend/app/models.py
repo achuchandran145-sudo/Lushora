@@ -245,3 +245,14 @@ class ProviderPortfolioImage(Base):
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     caption: Mapped[str] = mapped_column(String(240), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProviderStaff(Base):
+    __tablename__ = "provider_staff"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), index=True, nullable=False)
+    full_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="staff", nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), default="", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
