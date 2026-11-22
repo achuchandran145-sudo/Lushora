@@ -560,3 +560,21 @@ def test_booking_request_expires_after_24_hours_and_is_rejected_on_status_change
     with SessionLocal() as db:
         row=db.query(__import__('app.models',fromlist=['Booking']).Booking).filter_by(id=booking.json()['id']).first()
         assert row.status=='expired'
+
+
+def test_customer_waitlist_create_list_duplicate_cancel_and_owner_scope():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Waitlist Customer','email':'waitlist-customer@example.com','phone':'9876543319','password':'StrongPass123','role':'customer'})
+    other=client.post('/api/auth/register',json={'full_name':'Waitlist Other','email':'waitlist-other@example.com','phone':'9876543320','password':'StrongPass123','role':'customer'})
+    h={'Authorization':f"Bearer {customer.json()['access_token']}"};ho={'Authorization':f"Bearer {other.json()['access_token']}"}
+    provider=client.get('/api/providers',params={'city':'Coimbatore','category':'Salon'}).json()[0];service=provider['services'][0]
+    preferred=datetime.combine((datetime.now()+timedelta(days=25)).date(),datetime.strptime('00:00','%H:%M').time())
+    payload={'provider_id':provider['id'],'service_id':service['id'],'preferred_date':preferred.isoformat(),'preferred_time_start':'10:00','preferred_time_end':'13:00'}
+    created=client.post('/api/customer/me/waitlist',headers=h,json=payload);assert created.status_code==201
+    assert client.get('/api/customer/me/waitlist',headers=h).json()[0]['id']==created.json()['id']
+    duplicate=client.post('/api/customer/me/waitlist',headers=h,json=payload);assert duplicate.status_code==409
+    invalid_range={**payload,'preferred_time_start':'14:00','preferred_time_end':'13:00'}
+    assert client.post('/api/customer/me/waitlist',headers=h,json=invalid_range).status_code==400
+    stranger=client.delete(f"/api/customer/me/waitlist/{created.json()['id']}",headers=ho);assert stranger.status_code==404
+    cancelled=client.delete(f"/api/customer/me/waitlist/{created.json()['id']}",headers=h);assert cancelled.status_code==200
+    assert client.delete(f"/api/customer/me/waitlist/{created.json()['id']}",headers=h).status_code==400
