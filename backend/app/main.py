@@ -656,6 +656,10 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
             raise HTTPException(400,"Appointment overlaps provider break time")
 
 
+    # Optional staff assignment: only active staff belonging to this provider may be selected.
+    if payload.staff_id is not None:
+        assigned_staff=db.query(models.ProviderStaff).filter(models.ProviderStaff.id==payload.staff_id,models.ProviderStaff.provider_id==provider.id,models.ProviderStaff.is_active==True).first()
+        if not assigned_staff: raise HTTPException(400,"Selected staff member is unavailable for this provider")
     # Prevent overlapping requests for the same provider. Requested bookings block the
     # slot until the provider accepts, rejects, or cancels them.
     new_end = payload.appointment_at + timedelta(minutes=service.duration_minutes)
@@ -666,9 +670,12 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
         models.Booking.status.in_(["requested", "confirmed"]),
     ).all()
     for existing_booking, existing_service in active:
+        # Unassigned bookings reserve provider capacity. Staff-assigned bookings may overlap only when different active staff are assigned.
+        if payload.staff_id is not None and existing_booking.staff_id is not None and existing_booking.staff_id != payload.staff_id:
+            continue
         existing_end = existing_booking.appointment_at + timedelta(minutes=existing_service.duration_minutes)
         if payload.appointment_at < existing_end and new_end > existing_booking.appointment_at:
-            raise HTTPException(409, "This provider already has a booking during the selected time")
+            raise HTTPException(409, "This provider or selected staff member already has a booking during the selected time")
 
     attached_user = None
     if authorization and authorization.lower().startswith("bearer "):
