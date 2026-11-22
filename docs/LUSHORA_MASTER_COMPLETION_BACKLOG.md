@@ -11,7 +11,7 @@ Audit snapshot (2026-11-22):
 - CI currently runs backend pytest and frontend production build only. No frontend unit/component or browser E2E job is configured.
 - SQLite schema changes are handled by a custom migration helper; README explicitly says production should use Alembic. No production backup/restore evidence or restore drill is in repo.
 - Notification worker retries exist, but worker is a standalone infinite-loop process and deployment/observability/retry recovery still require operational validation.
-- Sensitive verification document images are present in the Git repository under backend/private_verification_uploads. Do not inspect their contents. This is a critical privacy exposure; current branch cleanup can remove them from the current tree, but Git-history purge and credential/identity-document response require explicit approval and coordination.
+- Sensitive verification document images were found under backend/private_verification_uploads. The files have now been removed from the current branch tree and the upload folders added to .gitignore. Their Git history may still contain the documents; history rewrite and external incident-response steps are NOT done and require explicit approval/coordination.
 - Frontend build passes; visual, responsive, keyboard/accessibility, browser journey and local device validation are not yet evidenced.
 - [ ] Validate current marketplace/customer/provider/admin flows end-to-end
 - [ ] Audit current tests for meaningful assertions and coverage gaps
