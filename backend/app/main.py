@@ -835,3 +835,25 @@ def admin_review_moderation(review_id:int,payload:dict,user:models.User=Depends(
     if not review: raise HTTPException(404,"Review not found")
     review.status=status;db.commit()
     return {"id":review.id,"status":review.status}
+
+@app.patch("/api/provider/me/services/{service_id}")
+def provider_update_service(service_id:int,payload:dict,user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    service=db.query(models.Service).filter(models.Service.id==service_id,models.Service.provider_id==(provider.id if provider else -1)).first()
+    if not service: raise HTTPException(404,"Service not found")
+    if "name" in payload:
+        name=str(payload["name"]).strip()
+        if len(name)<2 or len(name)>120: raise HTTPException(400,"Service name must be 2 to 120 characters")
+        service.name=name
+    if "price_inr" in payload:
+        try: price=int(payload["price_inr"])
+        except (TypeError,ValueError): raise HTTPException(400,"Price must be a whole number")
+        if price<0: raise HTTPException(400,"Price cannot be negative")
+        service.price_inr=price
+    if "duration_minutes" in payload:
+        try: duration=int(payload["duration_minutes"])
+        except (TypeError,ValueError): raise HTTPException(400,"Duration must be a whole number")
+        if duration<5 or duration>600: raise HTTPException(400,"Duration must be between 5 and 600 minutes")
+        service.duration_minutes=duration
+    db.commit();db.refresh(service)
+    return service
