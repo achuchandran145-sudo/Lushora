@@ -334,3 +334,9 @@ def test_admin_payment_list_is_forbidden_to_customer():
     headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
     response=client.get('/api/admin/payments',headers=headers)
     assert response.status_code==403
+
+def test_admin_payment_summary_is_forbidden_to_customer():
+    customer=client.post('/api/auth/register',json={'full_name':'Payment Summary Guard','email':'payment-summary-guard@example.com','phone':'9876543295','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    response=client.get('/api/admin/payments/summary',headers=headers)
+    assert response.status_code==403
