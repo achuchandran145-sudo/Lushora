@@ -121,7 +121,7 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     browser.wait_for_load_state("domcontentloaded")
     overflow = browser.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
     assert not overflow, "Homepage horizontally overflows the mobile viewport"
-    assert browser.get_by_role("heading", name="LUSHORA").count() >= 1
+    assert browser.get_by_role("link", name="LUSHORA home").count() >= 1
 
 
 def test_guest_discovery_and_booking_request(browser, e2e_servers):
@@ -134,7 +134,7 @@ def test_guest_discovery_and_booking_request(browser, e2e_servers):
         assert response.status==200
 
     browser.goto(e2e_servers["web"]+"/")
-    browser.get_by_role("button",name="Salon",exact=True).click()
+    browser.get_by_role("button",name="Salon",exact=True).click(timeout=15000)
     assert browser.get_by_text("Glow & Glam Salon",exact=True).count()==1
     browser.get_by_role("button",name="Book",exact=True).first.click()
 
@@ -161,7 +161,7 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.get_by_label("Password").fill("StrongProvider123!")
     browser.get_by_role("button", name="CREATE BUSINESS ACCOUNT").click()
     browser.wait_for_url("**/business/onboarding", timeout=15000)
-    assert browser.get_by_role("heading", name="Business verification").count() == 1
+    assert browser.get_by_role("heading", name="Verify your business").count() == 1
 
     browser.goto(e2e_servers["web"] + "/admin/login")
     browser.get_by_label("Business / admin email").fill("e2e-admin@lushora.test")
