@@ -221,7 +221,10 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     gateway: Mapped[str] = mapped_column(String(30), default="unconfigured", nullable=False)
+    gateway_order_id: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    gateway_payment_id: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     gateway_reference: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    receipt_number: Mapped[str] = mapped_column(String(40), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -295,3 +298,16 @@ class CommissionRule(Base):
     category: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
     commission_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PaymentWebhookEvent(Base):
+    __tablename__ = "payment_webhook_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    gateway: Mapped[str] = mapped_column(String(30), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="received", nullable=False)
+    last_error: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
