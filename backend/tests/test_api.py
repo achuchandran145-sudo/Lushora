@@ -936,3 +936,41 @@ def test_razorpay_order_checkout_signature_and_webhook_dedup(monkeypatch):
     duplicate=client.post('/api/payments/razorpay/webhook',content=body,headers=whheaders);assert duplicate.status_code==200 and duplicate.json()['duplicate'] is True
     tampered=client.post('/api/payments/razorpay/webhook',content=body+b' ',headers=whheaders);assert tampered.status_code==400
     record=client.get('/api/payments/me',headers=headers).json()[0];assert record['status']=='paid' and record['gateway_payment_id']==pay_id
+
+
+def test_otp_expired_challenge_is_rejected():
+    import app.main as main_module
+    from app.models import OTPChallenge
+    from datetime import datetime, timedelta
+    request = client.post('/api/v2/customer/otp/request', json={'phone':'9876543350'})
+    assert request.status_code == 200
+    challenge = request.json()['development_otp']
+    db = SessionLocal()
+    try:
+        row = db.query(OTPChallenge).filter_by(phone='+919876543350').order_by(OTPChallenge.created_at.desc()).first()
+        assert row is not None
+        row.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        db.commit()
+    finally:
+        db.close()
+    response = client.post('/api/v2/customer/otp/verify', json={'phone':'9876543350','otp':challenge})
+    assert response.status_code == 401
+    assert 'expired' in response.text.lower()
+
+
+def test_otp_challenge_cannot_be_replayed():
+    request = client.post('/api/v2/customer/otp/request', json={'phone':'9876543351'})
+    assert request.status_code == 200
+    otp = request.json()['development_otp']
+    first = client.post('/api/v2/customer/otp/verify', json={'phone':'9876543351','otp':otp})
+    assert first.status_code == 200
+    second = client.post('/api/v2/customer/otp/verify', json={'phone':'9876543351','otp':otp})
+    assert second.status_code == 401
+
+
+def test_customer_otp_request_is_disabled_when_development_mode_is_off(monkeypatch):
+    import app.main as main_module
+    monkeypatch.setattr(main_module, 'OTP_DEV_MODE', False)
+    response = client.post('/api/v2/customer/otp/request', json={'phone':'9876543352'})
+    assert response.status_code == 503
+    assert 'SMS OTP delivery is not configured' in response.text
