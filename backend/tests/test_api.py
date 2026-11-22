@@ -542,11 +542,11 @@ def test_payment_record_is_owner_scoped_and_idempotent_pending_only():
     booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Payment Owner','customer_phone':'9876543290','provider_id':p['id'],'service_id':service['id'],'appointment_at':at,'notes':''})
     assert booking.status_code==201
     bid=booking.json()['id']
-    first=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'})
+    first=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'test-idem-paymentkey0001'})
     assert first.status_code==201 and first.json()['status']=='pending'
-    second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'payment-key-0001'})
+    second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'test-idem-paymentkey0001'})
     assert second.json()['id']==first.json()['id']
-    denied=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':stranger_headers['Authorization'],'Idempotency-Key':'stranger-key-0001'})
+    denied=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':stranger_headers['Authorization'],'Idempotency-Key':'test-idem-strangerkey0001'})
     assert denied.status_code==404
     assert client.get('/api/payments/me',headers=headers).status_code==200
 
@@ -559,7 +559,7 @@ def test_cancel_booking_cancels_pending_payment_record():
     booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Cancel Pay Customer','customer_phone':'9876543292','provider_id':p['id'],'service_id':service['id'],'appointment_at':at,'notes':''})
     assert booking.status_code==201
     bid=booking.json()['id']
-    pay=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'cancel-payment-0001'})
+    pay=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'test-idem-cancelpayment0001'})
     assert pay.status_code==201 and pay.json()['status']=='pending'
     cancelled=client.patch(f'/api/bookings/{bid}/status?status=cancelled',headers=headers)
     assert cancelled.status_code==200
@@ -576,9 +576,9 @@ def test_payment_rejects_second_pending_record_with_different_key():
     booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Duplicate Payment Customer','customer_phone':'9876543293','provider_id':p['id'],'service_id':service['id'],'appointment_at':at,'notes':''})
     assert booking.status_code==201
     bid=booking.json()['id']
-    first=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'dup-payment-0001'})
+    first=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'test-idem-duppayment0001'})
     assert first.status_code==201
-    second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'dup-payment-0002'})
+    second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'test-idem-duppayment0002'})
     assert second.status_code==409
 
 def test_admin_payment_list_is_forbidden_to_customer():
@@ -611,7 +611,7 @@ def test_refund_request_and_admin_review_foundation():
     p=client.get('/api/providers').json()[0]; service=p['services'][0]
     appt=datetime.combine((datetime.now()+timedelta(days=11)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
     booking=client.post('/api/bookings',headers=cust_headers,json={'customer_name':'Refund Customer','customer_phone':'9876543217','provider_id':p['id'],'service_id':service['id'],'appointment_at':appt,'notes':''})
-    payment=client.post('/api/payments',headers={**cust_headers,'Idempotency-Key':'refund-payment-001'},json={'booking_id':booking.json()['id']})
+    payment=client.post('/api/payments',headers={**cust_headers,'Idempotency-Key':'test-idem-refundpayment001'},json={'booking_id':booking.json()['id']})
     assert payment.status_code==201
     from app.models import Payment
     from app.database import get_db
@@ -868,8 +868,8 @@ def test_full_and_advance_payment_amounts_and_invalid_type():
     at=datetime.combine((datetime.now()+timedelta(days=26)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
     booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Advance Customer','customer_phone':'9876543323','provider_id':provider['id'],'service_id':service['id'],'appointment_at':at,'notes':''});assert booking.status_code==201
     bid=booking.json()['id']
-    invalid=client.post('/api/payments',headers={**headers,'Idempotency-Key':'advance-invalid-0001'},json={'booking_id':bid,'payment_type':'other'});assert invalid.status_code==400
-    advance=client.post('/api/payments',headers={**headers,'Idempotency-Key':'advance-valid-0001'},json={'booking_id':bid,'payment_type':'advance'});assert advance.status_code==201
+    invalid=client.post('/api/payments',headers={**headers,'Idempotency-Key':'test-idem-advanceinvalid0001'},json={'booking_id':bid,'payment_type':'other'});assert invalid.status_code==400
+    advance=client.post('/api/payments',headers={**headers,'Idempotency-Key':'test-idem-advancevalid0001'},json={'booking_id':bid,'payment_type':'advance'});assert advance.status_code==201
     total=service['price_inr'];expected=max(1,(total*20+99)//100)
     assert advance.json()['amount_inr']==expected and advance.json()['balance_due_inr']==total-expected and advance.json()['payment_type']=='advance'
     assert advance.json()['gateway']=='unconfigured' and 'no money collected' in advance.json()['message'].lower()
@@ -925,7 +925,7 @@ def test_razorpay_order_checkout_signature_and_webhook_dedup(monkeypatch):
     provider=client.get('/api/providers').json()[0];service=provider['services'][0]
     at=datetime.combine((datetime.now()+timedelta(days=28)).date(),datetime.strptime('10:00','%H:%M').time())
     booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Gateway Customer','customer_phone':'9876543331','provider_id':provider['id'],'service_id':service['id'],'appointment_at':at.isoformat(),'notes':''});assert booking.status_code==201
-    created=client.post('/api/payments',headers={**headers,'Idempotency-Key':'razorpay-test-key-001'},json={'booking_id':booking.json()['id'],'payment_type':'full'});assert created.status_code==201
+    created=client.post('/api/payments',headers={**headers,'Idempotency-Key':'test-idem-razorpaytestkey001'},json={'booking_id':booking.json()['id'],'payment_type':'full'});assert created.status_code==201
     d=created.json()['gateway_details'];assert d['order_id']=='order_mock_123' and d['key_id']=='rzp_test_fake_key' and created.json()['gateway']=='razorpay'
     payment_id=created.json()['id'];pay_id='pay_mock_456';sig=hmac.new(b'fake_secret',b'order_mock_123|pay_mock_456',hashlib.sha256).hexdigest()
     invalid=client.post(f'/api/payments/{payment_id}/verify',headers=headers,json={'razorpay_order_id':'order_mock_123','razorpay_payment_id':pay_id,'razorpay_signature':'bad'});assert invalid.status_code==400
