@@ -215,6 +215,8 @@ class Payment(Base):
     booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), index=True, nullable=False)
     customer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     amount_inr: Mapped[int] = mapped_column(Integer, nullable=False)
+    payment_type: Mapped[str] = mapped_column(String(20), default="full", nullable=False)
+    balance_due_inr: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
     gateway: Mapped[str] = mapped_column(String(30), default="unconfigured", nullable=False)
