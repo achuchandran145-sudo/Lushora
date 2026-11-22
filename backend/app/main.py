@@ -117,6 +117,36 @@ def update_customer_profile(payload: dict, user: models.User = Depends(require_r
 
 
 
+
+@app.post("/api/payments",status_code=201)
+def create_payment(payload:dict,user:models.User=Depends(get_current_user),db:Session=Depends(get_db),idempotency_key:str=Header(...,alias="Idempotency-Key")):
+    key=idempotency_key.strip()
+    if len(key)<8 or len(key)>120: raise HTTPException(400,"Idempotency-Key must be 8 to 120 characters")
+    existing=db.query(models.Payment).filter(models.Payment.idempotency_key==key).first()
+    if existing:
+        if existing.customer_user_id!=user.id: raise HTTPException(409,"Idempotency key already used")
+        return {"id":existing.id,"booking_id":existing.booking_id,"amount_inr":existing.amount_inr,"status":existing.status,"gateway":existing.gateway,"message":"Existing payment request returned"}
+    booking_id=int(payload.get("booking_id",0))
+    booking=db.query(models.Booking).filter(models.Booking.id==booking_id,models.Booking.customer_user_id==user.id).first()
+    if not booking: raise HTTPException(404,"Booking not found for this customer")
+    if booking.status not in {"requested","confirmed"}: raise HTTPException(400,"Payment is not available for this booking status")
+    service=db.query(models.Service).filter(models.Service.id==booking.service_id).first()
+    if not service: raise HTTPException(404,"Booking service not found")
+    payment=models.Payment(booking_id=booking.id,customer_user_id=user.id,amount_inr=int(service.price_inr),status="pending",idempotency_key=key,gateway="unconfigured")
+    db.add(payment)
+    try: db.commit()
+    except Exception:
+        db.rollback()
+        existing=db.query(models.Payment).filter(models.Payment.idempotency_key==key).first()
+        if existing and existing.customer_user_id==user.id: return {"id":existing.id,"booking_id":existing.booking_id,"amount_inr":existing.amount_inr,"status":existing.status,"gateway":existing.gateway,"message":"Existing payment request returned"}
+        raise HTTPException(409,"Payment request conflict")
+    db.refresh(payment)
+    return {"id":payment.id,"booking_id":payment.booking_id,"amount_inr":payment.amount_inr,"status":payment.status,"gateway":payment.gateway,"message":"Payment record created; gateway not configured, no money collected"}
+
+@app.get("/api/payments/me")
+def my_payments(user:models.User=Depends(get_current_user),db:Session=Depends(get_db)):
+    return db.query(models.Payment).filter(models.Payment.customer_user_id==user.id).order_by(models.Payment.created_at.desc()).all()
+
 @app.post("/api/v2/admin/subscriptions",status_code=201)
 def create_subscription(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     provider_id=int(payload.get("provider_id",0));area_id=int(payload.get("area_id",0));category=str(payload.get("category","")).strip();tier=str(payload.get("tier","")).lower()
