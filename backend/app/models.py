@@ -318,7 +318,7 @@ class SecurityAuditEvent(Base):
     __tablename__ = "security_audit_events"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    event_type: Mapped[str> = mapped_column(String(80), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
     identifier_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     ip_hash: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
