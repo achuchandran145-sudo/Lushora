@@ -153,7 +153,7 @@ def test_reviews_require_completed_owned_booking_and_moderation():
     client.post('/api/admin/demo-seed')
     provider=client.get('/api/providers',params={'category':'Salon','city':'Coimbatore'}).json()[0]
     service=provider['services'][0]
-    booking_payload={'customer_name':'Review Customer','customer_phone':'9876543240','provider_id':provider['id'],'service_id':service['id'],'appointment_at':(datetime.now()+timedelta(days=4)).isoformat(),'notes':'Review test'}
+    booking_payload={'customer_name':'Review Customer','customer_phone':'9876543240','provider_id':provider['id'],'service_id':service['id'],'appointment_at':datetime.combine((datetime.now()+timedelta(days=4)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat(),'notes':'Review test'}
     booking=client.post('/api/bookings',headers=customer_headers,json=booking_payload)
     assert booking.status_code==201
     not_completed=client.post('/api/customer/me/reviews',headers=customer_headers,json={'booking_id':booking.json()['id'],'rating':5,'comment':'Good'})
