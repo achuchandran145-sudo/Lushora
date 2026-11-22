@@ -527,7 +527,7 @@ def provider_availability(user: models.User = Depends(require_role("provider")),
     if not provider: raise HTTPException(404,"Business profile not found")
     try: cfg=json.loads(provider.availability_config or "{}")
     except Exception: cfg={}
-    return cfg or {"working_days":[0,1,2,3,4,5],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
+    return cfg or {"working_days":[0,1,2,3,4,5,6],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
 
 @app.put("/api/provider/me/availability")
 def update_provider_availability(payload: dict, user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
