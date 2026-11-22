@@ -104,6 +104,11 @@ def migrate_sqlite_schema():
             if not already:
                 conn.execute(text("UPDATE notification_preferences SET push_enabled=0, whatsapp_enabled=0, sms_enabled=0"))
                 conn.execute(text("INSERT INTO schema_migrations (migration_key) VALUES ('notification_external_opt_in_defaults_v1')"))
+        payment_cols = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(payments)").fetchall()} if "payments" in table_names else set()
+        if "payment_type" not in payment_cols:
+            conn.execute(text("ALTER TABLE payments ADD COLUMN payment_type VARCHAR(20) NOT NULL DEFAULT 'full'"))
+        if "balance_due_inr" not in payment_cols:
+            conn.execute(text("ALTER TABLE payments ADD COLUMN balance_due_inr INTEGER NOT NULL DEFAULT 0"))
         booking_cols = {c["name"] for c in inspector.get_columns("bookings")} if "bookings" in table_names else set()
         if "customer_user_id" not in booking_cols:
             conn.execute(text("ALTER TABLE bookings ADD COLUMN customer_user_id INTEGER"))
