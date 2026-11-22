@@ -777,3 +777,57 @@ def provider_verification_me(user:models.User=Depends(require_role("provider")),
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
     if not row: return {"status":"not_submitted"}
     return {"id":row.id,"business_name":row.business_name,"categories":json.loads(row.categories_json),"city":row.city,"locality":row.locality,"address":row.address,"documents":{"aadhaar":bool(row.aadhaar_document_name),"pan":bool(row.pan_document_name),"business":bool(row.business_document_name)},"status":row.status,"admin_notes":row.admin_notes}
+
+# Verified booking reviews
+@app.post("/api/customer/me/reviews", status_code=201)
+def create_review(payload: dict, user: models.User = Depends(require_role("customer")), db: Session = Depends(get_db)):
+    booking_id = payload.get("booking_id")
+    try: rating = int(payload.get("rating"))
+    except (TypeError, ValueError): raise HTTPException(400, "Rating must be an integer from 1 to 5")
+    comment = str(payload.get("comment", "")).strip()
+    if rating < 1 or rating > 5: raise HTTPException(400, "Rating must be between 1 and 5")
+    if len(comment) > 2000: raise HTTPException(400, "Review comment is too long")
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id, models.Booking.customer_user_id == user.id).first()
+    if not booking: raise HTTPException(404, "Customer booking not found")
+    if booking.status != "completed": raise HTTPException(400, "Reviews are allowed only for completed bookings")
+    if db.query(models.Review).filter(models.Review.booking_id == booking.id).first(): raise HTTPException(409, "This booking already has a review")
+    review = models.Review(booking_id=booking.id, customer_user_id=user.id, provider_id=booking.provider_id, rating=rating, comment=comment)
+    db.add(review); db.commit(); db.refresh(review)
+    return {"id":review.id,"booking_id":review.booking_id,"provider_id":review.provider_id,"rating":review.rating,"comment":review.comment,"status":review.status,"created_at":review.created_at}
+
+@app.get("/api/providers/{provider_id}/reviews")
+def provider_reviews(provider_id: int, db: Session = Depends(get_db)):
+    provider = db.query(models.Provider).filter(models.Provider.id == provider_id, models.Provider.approval_status == "approved").first()
+    if not provider: raise HTTPException(404, "Provider not found")
+    rows = db.query(models.Review).filter(models.Review.provider_id == provider_id, models.Review.status == "approved").order_by(models.Review.created_at.desc()).all()
+    return {"provider_id":provider_id,"average_rating":round(sum(x.rating for x in rows)/len(rows),2) if rows else 0,"review_count":len(rows),"reviews":[{"id":x.id,"rating":x.rating,"comment":x.comment,"provider_reply":x.provider_reply,"created_at":x.created_at} for x in rows]}
+
+@app.get("/api/customer/me/reviews")
+def customer_reviews(user: models.User = Depends(require_role("customer")), db: Session = Depends(get_db)):
+    rows=db.query(models.Review).filter(models.Review.customer_user_id==user.id).order_by(models.Review.created_at.desc()).all()
+    return [{"id":x.id,"booking_id":x.booking_id,"provider_id":x.provider_id,"rating":x.rating,"comment":x.comment,"status":x.status,"provider_reply":x.provider_reply,"created_at":x.created_at} for x in rows]
+
+@app.patch("/api/provider/me/reviews/{review_id}/reply")
+def provider_review_reply(review_id:int,payload:dict,user:models.User=Depends(require_role("provider")),db:Session=Depends(get_db)):
+    provider=db.query(models.Provider).filter(models.Provider.owner_user_id==user.id).first()
+    review=db.query(models.Review).filter(models.Review.id==review_id,models.Review.provider_id==(provider.id if provider else -1),models.Review.status=="approved").first()
+    if not review: raise HTTPException(404,"Review not found")
+    reply=str(payload.get("reply","")).strip()
+    if not reply or len(reply)>2000: raise HTTPException(400,"Reply must be between 1 and 2000 characters")
+    review.provider_reply=reply;db.commit()
+    return {"id":review.id,"provider_reply":review.provider_reply}
+
+@app.get("/api/admin/reviews")
+def admin_reviews(status:str=Query("all"),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    q=db.query(models.Review)
+    if status!="all": q=q.filter(models.Review.status==status)
+    return [{"id":x.id,"booking_id":x.booking_id,"customer_user_id":x.customer_user_id,"provider_id":x.provider_id,"rating":x.rating,"comment":x.comment,"status":x.status,"provider_reply":x.provider_reply,"created_at":x.created_at} for x in q.order_by(models.Review.created_at.desc()).all()]
+
+@app.patch("/api/admin/reviews/{review_id}")
+def admin_review_moderation(review_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    status=str(payload.get("status",""))
+    if status not in {"approved","rejected"}: raise HTTPException(400,"Status must be approved or rejected")
+    review=db.query(models.Review).filter(models.Review.id==review_id).first()
+    if not review: raise HTTPException(404,"Review not found")
+    review.status=status;db.commit()
+    return {"id":review.id,"status":review.status}
