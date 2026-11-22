@@ -1229,3 +1229,48 @@ def provider_branch_delete(branch_id:int,user:models.User=Depends(require_role("
     row=db.query(models.ProviderBranch).filter(models.ProviderBranch.id==branch_id,models.ProviderBranch.provider_id==provider.id).first()
     if not row: raise HTTPException(404,"Branch not found")
     db.delete(row);db.commit();return {"message":"Branch removed"}
+
+
+@app.patch("/api/bookings/{booking_id}/reschedule")
+def reschedule_booking(booking_id:int,payload:dict,user:models.User=Depends(current_user),db:Session=Depends(get_db)):
+    booking=db.query(models.Booking).filter(models.Booking.id==booking_id).first()
+    if not booking: raise HTTPException(404,"Booking not found")
+    provider=db.query(models.Provider).filter(models.Provider.id==booking.provider_id).first()
+    if not provider: raise HTTPException(404,"Provider not found")
+    if not (user.role=="admin" or (user.role=="provider" and provider.owner_user_id==user.id) or (user.role=="customer" and booking.customer_user_id==user.id): raise HTTPException(403,"You cannot reschedule this booking")
+    if booking.status not in {"requested","confirmed"}: raise HTTPException(400,"Only requested or confirmed bookings can be rescheduled")
+    try:
+        appointment=datetime.fromisoformat(str(payload.get("appointment_at","")))
+    except Exception: raise HTTPException(400,"Invalid appointment time")
+    if appointment.tzinfo is not None: raise HTTPException(400,"Send appointment time as local India time without timezone offset")
+    local_now=datetime.now(LUSHORA_LOCAL_TZ).replace(tzinfo=None)
+    if appointment<=local_now: raise HTTPException(400,"Appointment must be in the future")
+    if appointment.minute%BOOKING_SLOT_STEP_MINUTES!=0 or appointment.second or appointment.microsecond: raise HTTPException(400,"Appointment must align to a 30-minute slot")
+    service=db.query(models.Service).filter(models.Service.id==booking.service_id,models.Service.provider_id==booking.provider_id).first()
+    if not service: raise HTTPException(404,"Booking service not found")
+    db.execute(update(models.Provider).where(models.Provider.id==provider.id).values(booking_lock_version=models.Provider.booking_lock_version+1))
+    try: availability=json.loads(provider.availability_config or "{}")
+    except Exception: availability={}
+    availability=availability or {"working_days":[0,1,2,3,4,5,6],"start_time":"09:00","end_time":"18:00","break_start":"","break_end":"","closed_dates":[]}
+    day=appointment.date();date_str=day.isoformat()
+    if day.weekday() not in availability.get("working_days",[]): raise HTTPException(400,"Provider is closed on the selected day")
+    if date_str in availability.get("closed_dates",[]): raise HTTPException(400,"Provider is closed on the selected date")
+    try:
+        work_start=datetime.combine(day,datetime.strptime(availability["start_time"],"%H:%M").time())
+        work_end=datetime.combine(day,datetime.strptime(availability["end_time"],"%H:%M").time())
+    except Exception: raise HTTPException(400,"Provider availability configuration is invalid")
+    finish=appointment+timedelta(minutes=service.duration_minutes)
+    if appointment<work_start or finish>work_end: raise HTTPException(400,"Appointment is outside provider working hours")
+    bs,be=availability.get("break_start"),availability.get("break_end")
+    if bs and be:
+        break_start=datetime.combine(day,datetime.strptime(bs,"%H:%M").time());break_end=datetime.combine(day,datetime.strptime(be,"%H:%M").time())
+        if appointment<break_end and finish>break_start: raise HTTPException(400,"Appointment overlaps provider break time")
+    active=db.query(models.Booking,models.Service).join(models.Service,models.Booking.service_id==models.Service.id).filter(models.Booking.provider_id==booking.provider_id,models.Booking.status.in_(["requested","confirmed"]),models.Booking.id!=booking.id).all()
+    for other,other_service in active:
+        other_end=other.appointment_at+timedelta(minutes=other_service.duration_minutes)
+        if appointment<other_end and finish>other.appointment_at: raise HTTPException(409,"This provider already has a booking during the selected time")
+    booking.appointment_at=appointment
+    if booking.customer_user_id: _create_notification(db,booking.customer_user_id,"Booking rescheduled",f"Your booking #{booking.id} has been moved to {appointment.strftime('%Y-%m-%d %H:%M')} (India local time).","booking_status",booking.id)
+    if provider.owner_user_id: _create_notification(db,provider.owner_user_id,"Booking rescheduled",f"Booking #{booking.id} was rescheduled to {appointment.strftime('%Y-%m-%d %H:%M')}.","booking_status",booking.id)
+    db.commit();db.refresh(booking)
+    return {"id":booking.id,"appointment_at":booking.appointment_at,"status":booking.status,"message":"Booking rescheduled"}
