@@ -684,7 +684,20 @@ def update_provider_availability(payload: dict, user: models.User = Depends(requ
             bsm,bss=map(int,bs.split(":"));bem,bes=map(int,be.split(":"))
             if not (sh*60+sm<=bsm*60+bss<bem*60+bes<=eh*60+em): raise ValueError()
         except Exception: raise HTTPException(400,"Break must fall within working hours")
-    cfg={"working_days":sorted(set(days)),"start_time":start,"end_time":end,"break_start":bs,"break_end":be,"closed_dates":payload.get("closed_dates",[])}
+    closed_dates=payload.get("closed_dates",[])
+    if not isinstance(closed_dates,list) or len(closed_dates)>366:
+        raise HTTPException(400,"Closed dates must be a list of at most 366 dates")
+    normalized_closed=[]
+    for value in closed_dates:
+        if not isinstance(value,str):
+            raise HTTPException(400,"Closed dates must use YYYY-MM-DD format")
+        try:
+            parsed=datetime.strptime(value,"%Y-%m-%d")
+            if parsed.strftime("%Y-%m-%d")!=value: raise ValueError()
+        except Exception:
+            raise HTTPException(400,"Closed dates must use YYYY-MM-DD format")
+        if value not in normalized_closed: normalized_closed.append(value)
+    cfg={"working_days":sorted(set(days)),"start_time":start,"end_time":end,"break_start":bs,"break_end":be,"closed_dates":normalized_closed}
     provider.availability_config=json.dumps(cfg);db.commit()
     return cfg
 
