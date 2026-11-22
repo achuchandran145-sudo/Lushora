@@ -194,6 +194,32 @@ def admin_payment_summary(user:models.User=Depends(require_role("admin")),db:Ses
     return {"total_count":total_count,"total_amount_inr":total_amount,"paid_amount_inr":paid_amount,"pending_amount_inr":pending_amount,"by_status":by_status}
 
 
+@app.get("/api/admin/commission-rules")
+def admin_commission_rules(user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rules=db.query(models.CommissionRule).order_by(models.CommissionRule.category.asc()).all()
+    configured={r.category:r.commission_percent for r in rules}
+    return [{"category":category,"commission_percent":configured.get(category,0)} for category in CATEGORIES]
+
+@app.put("/api/admin/commission-rules")
+def update_admin_commission_rules(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+    rules=payload.get("rules")
+    if not isinstance(rules,list) or len(rules)>len(CATEGORIES): raise HTTPException(400,"rules must be a list of category commission settings")
+    seen=set()
+    for item in rules:
+        if not isinstance(item,dict): raise HTTPException(400,"Invalid commission rule")
+        category=item.get("category");percent=item.get("commission_percent")
+        if category not in CATEGORIES or category in seen: raise HTTPException(400,"Unsupported or duplicate commission category")
+        if not isinstance(percent,int) or percent<0 or percent>30: raise HTTPException(400,"Commission percent must be between 0 and 30")
+        seen.add(category)
+    for item in rules:
+        row=db.query(models.CommissionRule).filter_by(category=item["category"]).first()
+        if row: row.commission_percent=item["commission_percent"]
+        else: db.add(models.CommissionRule(category=item["category"],commission_percent=item["commission_percent"]))
+    db.commit()
+    configured={r.category:r.commission_percent for r in db.query(models.CommissionRule).all()}
+    return [{"category":category,"commission_percent":configured.get(category,0)} for category in CATEGORIES]
+
+
 @app.get("/api/admin/payments/reconciliation")
 def admin_payment_reconciliation(limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0),user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     rows=(db.query(models.Payment,models.Booking)
