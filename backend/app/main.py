@@ -1237,7 +1237,7 @@ def reschedule_booking(booking_id:int,payload:dict,user:models.User=Depends(curr
     if not booking: raise HTTPException(404,"Booking not found")
     provider=db.query(models.Provider).filter(models.Provider.id==booking.provider_id).first()
     if not provider: raise HTTPException(404,"Provider not found")
-    if not (user.role=="admin" or (user.role=="provider" and provider.owner_user_id==user.id) or (user.role=="customer" and booking.customer_user_id==user.id): raise HTTPException(403,"You cannot reschedule this booking")
+    if not (user.role=="admin" or (user.role=="provider" and provider.owner_user_id==user.id) or (user.role=="customer" and booking.customer_user_id==user.id)): raise HTTPException(403,"You cannot reschedule this booking")
     if booking.status not in {"requested","confirmed"}: raise HTTPException(400,"Only requested or confirmed bookings can be rescheduled")
     try:
         appointment=datetime.fromisoformat(str(payload.get("appointment_at","")))
