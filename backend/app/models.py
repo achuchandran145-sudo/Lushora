@@ -194,3 +194,15 @@ class NotificationDevice(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Review(Base):
+    __tablename__ = "reviews"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), unique=True, nullable=False, index=True)
+    customer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("providers.id"), nullable=False, index=True)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True, nullable=False)
+    provider_reply: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
