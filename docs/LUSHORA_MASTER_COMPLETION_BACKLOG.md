@@ -28,7 +28,7 @@ Audit findings: current slot generation uses 30-minute stepping and naive server
 - [x] Availability validation against provider schedule, service duration, breaks and closures (booking creation enforces rules)
 - [x] Slot generation uses 30-minute increments; booking creation enforces the same grid and interprets naive timestamps as India-local (Asia/Kolkata); timezone offsets are rejected
 - [x] Prevent double-booking under concurrent requests (provider-row lock/version update; concurrent-request regression test passes CI)
-- [ ] Staff-specific availability
+- [ ] Staff-specific availability (explicitly deferred: MVP booking slots are provider-wide; staff profiles exist but bookings are not assigned to individual staff yet)
 - [ ] Break/holiday/closure integration
 - [x] Booking confirmation UX and statuses (requested/confirmed/rejected/completed/cancelled lifecycle and role checks)
 - [x] Reschedule flow (customer/provider UI and API; validates availability, conflicts, owner access and 30-minute grid)
