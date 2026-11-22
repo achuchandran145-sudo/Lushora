@@ -37,3 +37,5 @@
 .notification-pref-row strong{display:block;color:#4c3549;font-size:11px}
 .notification-pref-row small{display:block;color:#968b93;font-size:9px;margin-top:4px}
 .notification-pref-row input[type=checkbox]{width:18px;height:18px;accent-color:#563354;cursor:pointer}
+
+.notification-pref-row input[type=checkbox]:disabled{opacity:.55;cursor:not-allowed}
