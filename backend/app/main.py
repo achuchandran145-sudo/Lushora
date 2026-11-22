@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import os, re, json, hmac, hashlib, base64, secrets
 from fastapi import FastAPI, Depends, HTTPException, Query, Header, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +33,8 @@ app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGIN
 
 AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()
 TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7
+LUSHORA_LOCAL_TZ = ZoneInfo('Asia/Kolkata')
+BOOKING_SLOT_STEP_MINUTES = 30
 
 def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode().rstrip("=")
@@ -545,7 +548,10 @@ def create_booking(payload: schemas.BookingCreate, db: Session = Depends(get_db)
     db.execute(update(models.Provider).where(models.Provider.id==provider.id).values(booking_lock_version=models.Provider.booking_lock_version+1))
     service = db.query(models.Service).filter(models.Service.id == payload.service_id, models.Service.provider_id == payload.provider_id).first()
     if not service: raise HTTPException(404, "Provider or service not found")
-    if payload.appointment_at <= datetime.now(): raise HTTPException(400, "Appointment must be in the future")
+    if payload.appointment_at.tzinfo is not None: raise HTTPException(400, "Send appointment time as local India time without timezone offset")
+    local_now=datetime.now(LUSHORA_LOCAL_TZ).replace(tzinfo=None)
+    if payload.appointment_at <= local_now: raise HTTPException(400, "Appointment must be in the future")
+    if payload.appointment_at.minute % BOOKING_SLOT_STEP_MINUTES != 0 or payload.appointment_at.second or payload.appointment_at.microsecond: raise HTTPException(400, "Appointment must align to a 30-minute slot")
     # Enforce the provider's saved working hours, working days, closure dates and break
     # during booking creation (not only when the UI displays available slots).
     try:
@@ -727,7 +733,7 @@ def available_slots(provider_id:int,date:str=Query(...),service_id:int=Query(...
     break_s=datetime.combine(day,datetime.strptime(bs,"%H:%M").time()) if bs and be else None
     break_e=datetime.combine(day,datetime.strptime(be,"%H:%M").time()) if bs and be else None
     active=db.query(models.Booking,models.Service).join(models.Service,models.Booking.service_id==models.Service.id).filter(models.Booking.provider_id==provider_id,models.Booking.status.in_(["requested","confirmed"]),func.date(models.Booking.appointment_at)==date).all()
-    slots=[];step=30;now=datetime.now()
+    slots=[];step=BOOKING_SLOT_STEP_MINUTES;now=datetime.now(LUSHORA_LOCAL_TZ).replace(tzinfo=None)
     t=start
     while t+timedelta(minutes=service.duration_minutes)<=end:
         finish=t+timedelta(minutes=service.duration_minutes)
