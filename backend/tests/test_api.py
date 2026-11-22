@@ -314,3 +314,17 @@ def test_cancel_booking_cancels_pending_payment_record():
     history=client.get('/api/payments/me',headers=headers)
     record=next(x for x in history.json() if x['id']==pay.json()['id'])
     assert record['status']=='cancelled'
+
+def test_payment_rejects_second_pending_record_with_different_key():
+    client.post('/api/admin/demo-seed')
+    customer=client.post('/api/auth/register',json={'full_name':'Duplicate Payment Customer','email':'duplicate-pay@example.com','phone':'9876543293','password':'StrongPass123','role':'customer'})
+    headers={'Authorization':f"Bearer {customer.json()['access_token']}"}
+    p=client.get('/api/providers').json()[0];service=p['services'][0]
+    at=datetime.combine((datetime.now()+timedelta(days=10)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat()
+    booking=client.post('/api/bookings',headers=headers,json={'customer_name':'Duplicate Payment Customer','customer_phone':'9876543293','provider_id':p['id'],'service_id':service['id'],'appointment_at':at,'notes':''})
+    assert booking.status_code==201
+    bid=booking.json()['id']
+    first=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'dup-payment-0001'})
+    assert first.status_code==201
+    second=client.post('/api/payments',json={'booking_id':bid},headers={'Authorization':headers['Authorization'],'Idempotency-Key':'dup-payment-0002'})
+    assert second.status_code==409
