@@ -1,4 +1,5 @@
-import json, hmac, hashlib, os\nimport pytest
+import json, hmac, hashlib, os
+import pytest
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from app.main import app, _password_hash, _make_token
@@ -11,7 +12,18 @@ def setup_function():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
 
-def test_production_settings_reject_weak_auth_secret(monkeypatch):\n    import app.main as main_module\n    monkeypatch.setenv('APP_ENV', 'production')\n    monkeypatch.setattr(main_module, 'AUTH_SECRET', b'development-only-change-this-secret')\n    with pytest.raises(RuntimeError, match='LUSHORA_AUTH_SECRET'):\n        main_module._validate_production_settings()\n\ndef test_demo_seed_disabled_in_production(monkeypatch):\n    monkeypatch.setenv('APP_ENV', 'production')\n    assert client.post('/api/admin/demo-seed').status_code == 404\n\ndef test_health_and_categories():
+def test_production_settings_reject_weak_auth_secret(monkeypatch):
+    import app.main as main_module
+    monkeypatch.setenv('APP_ENV', 'production')
+    monkeypatch.setattr(main_module, 'AUTH_SECRET', b'development-only-change-this-secret')
+    with pytest.raises(RuntimeError, match='LUSHORA_AUTH_SECRET'):
+        main_module._validate_production_settings()
+
+def test_demo_seed_disabled_in_production(monkeypatch):
+    monkeypatch.setenv('APP_ENV', 'production')
+    assert client.post('/api/admin/demo-seed').status_code == 404
+
+def test_health_and_categories():
     assert client.get('/api/health').json()['status'] == 'ok'
     assert len(client.get('/api/categories').json()) == 4
 
