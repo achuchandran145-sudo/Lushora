@@ -622,6 +622,12 @@ def test_full_and_advance_payment_amounts_and_invalid_type():
     total=service['price_inr'];expected=max(1,(total*20+99)//100)
     assert advance.json()['amount_inr']==expected and advance.json()['balance_due_inr']==total-expected and advance.json()['payment_type']=='advance'
     assert advance.json()['gateway']=='unconfigured' and 'no money collected' in advance.json()['message'].lower()
+    from app.models import User
+    session=SessionLocal();admin=User(full_name='Finance Admin',email='finance-admin@example.com',phone='9876543326',password_hash=_password_hash('StrongPass123'),role='admin',is_active=True);session.add(admin);session.commit();session.refresh(admin);admin_headers={'Authorization':f'Bearer {_make_token(admin.id)}'};session.close()
+    ledger=client.get('/api/admin/payments',headers=admin_headers);assert ledger.status_code==200
+    row=next(x for x in ledger.json()['payments'] if x['id']==advance.json()['id'])
+    assert row['payment_type']=='advance' and row['balance_due_inr']==total-expected
+    summary=client.get('/api/admin/payments/summary',headers=admin_headers);assert summary.status_code==200 and summary.json()['by_payment_type']['advance']['amount_inr']==expected
 
 
 def test_admin_commission_rules_validation_and_permissions():
