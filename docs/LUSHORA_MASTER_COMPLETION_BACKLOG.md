@@ -32,6 +32,16 @@ Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires gre
 - [ ] Production release checklist: staging smoke test, security review, backup/restore evidence, rollback, monitoring and incident contacts.
 - [ ] Phase 0 sign-off only after all blocking checks have evidence; no code-presence-only sign-off.
 
+### Additional Phase 0 remediation (2026-11-22)
+- [x] Notification worker refactored to avoid import-time infinite loop, validate polling interval (1-300 seconds), and support SIGTERM/SIGINT graceful stop.
+- [x] Notification delivery tests added for retry/backoff, success after retry, exhausted attempts, and user-consent suppression.
+- [x] Worker tests added for stop behavior, session closure, and poll-interval validation.
+- [x] CI now installs axe-core and runs serious/critical WCAG accessibility scans on homepage and customer login.
+- [x] CI Gitleaks action added for repository and history scanning; findings still require review and remediation.
+- [ ] Latest CI run must validate the above changes and report all jobs green.
+- [ ] Accessibility scan must produce clean serious/critical results; lower-impact findings still require review.
+- [ ] Secret scan results must be reviewed; any historical real secrets must be rotated, and history rewriting requires explicit approval.
+
 ### Known CI failures being remediated (2026-11-22)
 - [ ] Browser E2E OTP wait was querying a null input before UI render; replaced with locator wait and value assertion.
 - [ ] Browser E2E category selector was brittle; switched to category-chip locator.
