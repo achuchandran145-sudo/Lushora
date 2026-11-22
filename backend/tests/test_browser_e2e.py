@@ -114,8 +114,12 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     browser.get_by_label("Street address").fill("10 E2E Test Street")
     browser.get_by_label("City").select_option("Coimbatore")
     browser.get_by_label("Area / locality").select_option("Vadavalli")
-    browser.get_by_role("button", name="SAVE & CONTINUE").click()
-    browser.wait_for_url(e2e_servers["web"] + "/", timeout=15000)
+    with browser.expect_response(lambda response: "/api/v2/customer/profile" in response.url and response.request.method == "PATCH", timeout=15000) as profile_response:
+        browser.get_by_role("button", name="SAVE & CONTINUE").click()
+    response = profile_response.value
+    assert response.status == 200, f"Customer profile PATCH failed: {response.status} {response.text()}"
+    browser.get_by_text("Profile saved successfully.", exact=True).wait_for(timeout=5000)
+    browser.wait_for_function("window.location.pathname === '/'", timeout=10000)
     browser.goto(e2e_servers["web"] + "/")
 
     browser.set_viewport_size({"width": 390, "height": 844})
