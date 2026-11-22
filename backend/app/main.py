@@ -140,7 +140,7 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
     existing=db.query(models.Payment).filter(models.Payment.idempotency_key==key).first()
     if existing:
         if existing.customer_user_id!=user.id: raise HTTPException(409,"Idempotency key already used")
-        return {"id":existing.id,"booking_id":existing.booking_id,"amount_inr":existing.amount_inr,"status":existing.status,"gateway":existing.gateway,"message":"Existing payment request returned"}
+        return {"id":existing.id,"booking_id":existing.booking_id,"amount_inr":existing.amount_inr,"payment_type":existing.payment_type,"balance_due_inr":existing.balance_due_inr,"status":existing.status,"gateway":existing.gateway,"message":"Existing payment request returned"}
     booking_id=int(payload.get("booking_id",0))
     booking=db.query(models.Booking).filter(models.Booking.id==booking_id,models.Booking.customer_user_id==user.id).first()
     if not booking: raise HTTPException(404,"Booking not found for this customer")
@@ -149,7 +149,12 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
     if pending: raise HTTPException(409,"A pending payment already exists for this booking")
     service=db.query(models.Service).filter(models.Service.id==booking.service_id).first()
     if not service: raise HTTPException(404,"Booking service not found")
-    payment=models.Payment(booking_id=booking.id,customer_user_id=user.id,amount_inr=int(service.price_inr),status="pending",idempotency_key=key,gateway="unconfigured")
+    payment_type=str(payload.get("payment_type","full")).lower()
+    if payment_type not in {"full","advance"}: raise HTTPException(400,"payment_type must be full or advance")
+    total=int(service.price_inr)
+    amount=total if payment_type=="full" else max(1,(total*20+99)//100)
+    balance_due=total-amount
+    payment=models.Payment(booking_id=booking.id,customer_user_id=user.id,amount_inr=amount,payment_type=payment_type,balance_due_inr=balance_due,status="pending",idempotency_key=key,gateway="unconfigured")
     db.add(payment)
     try: db.commit()
     except Exception:
@@ -158,7 +163,7 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
         if existing and existing.customer_user_id==user.id: return {"id":existing.id,"booking_id":existing.booking_id,"amount_inr":existing.amount_inr,"status":existing.status,"gateway":existing.gateway,"message":"Existing payment request returned"}
         raise HTTPException(409,"Payment request conflict")
     db.refresh(payment)
-    return {"id":payment.id,"booking_id":payment.booking_id,"amount_inr":payment.amount_inr,"status":payment.status,"gateway":payment.gateway,"message":"Payment record created; gateway not configured, no money collected"}
+    return {"id":payment.id,"booking_id":payment.booking_id,"amount_inr":payment.amount_inr,"payment_type":payment.payment_type,"balance_due_inr":payment.balance_due_inr,"status":payment.status,"gateway":payment.gateway,"message":"Payment record created; gateway not configured, no money collected"}
 
 @app.get("/api/payments/me")
 def my_payments(user:models.User=Depends(current_user),db:Session=Depends(get_db)):
