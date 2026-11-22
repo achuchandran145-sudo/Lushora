@@ -16,12 +16,12 @@ Mark a task DONE only after implementation, automated tests, frontend production
 - [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
 - [x] Address and contact data model/UX completeness (profile fields and city/locality/address validation)
 - [x] Provider profile editing and onboarding completion UX (owner-scoped API/UI; CI build + regression test)
-- [ ] Provider portfolio/gallery with secure media validation/storage
+- [x] Provider portfolio/gallery with image validation, size/dimension limits, owner management and public image retrieval (local storage; production storage hardening remains Phase 9)
 - [x] Provider service edit API (name, price, duration) with owner validation + regression tests
 - [x] Provider service edit UI in portal (name, price, duration; owner-checked API)
 - [x] Business operating hours, breaks, holidays and closure rules (working-day/hour/break validation and ISO closure dates; booking checks + regression tests)
-- [ ] Staff/member profiles and permissions (future provider feature)
-- [ ] Multi-branch/locations support
+- [x] Staff/member profiles (owner-managed CRUD, role labels and active status); [ ] staff login and permission enforcement (future RBAC/security work)
+- [x] Multi-branch/locations support (owner-managed CRUD, city/locality/address/phone and active status; branch-level hours/service assignment remain future work)
 
 ## Phase 2 — Booking engine
 - [ ] Availability validation against provider schedule and service duration
