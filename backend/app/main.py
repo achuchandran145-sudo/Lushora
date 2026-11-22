@@ -64,9 +64,15 @@ def _validate_production_settings() -> None:
     if not retention.isdigit() or int(retention) < 7:
         raise RuntimeError("Production requires LUSHORA_BACKUP_RETENTION_DAYS of at least 7.")
     repository_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    import stat as _stat
     for configured_path in (upload_dir, backup_dir):
-        if os.path.commonpath([repository_root, os.path.abspath(configured_path)]) == repository_root:
+        absolute_path = os.path.abspath(configured_path)
+        if os.path.commonpath([repository_root, absolute_path]) == repository_root:
             raise RuntimeError("Production upload and backup directories must be outside the application repository.")
+        if not os.path.isdir(absolute_path) or not os.access(absolute_path, os.W_OK):
+            raise RuntimeError("Production upload and backup paths must exist as writable directories.")
+        if os.name != "nt" and (_stat.S_IMODE(os.stat(absolute_path).st_mode) & 0o077):
+            raise RuntimeError("Production upload and backup directories must have private permissions (0700 or stricter).")
     for origin in _CORS_ORIGINS:
         if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?", origin) or "*" in origin:
             raise RuntimeError("Production CORS origins must be valid HTTPS origins without wildcard or localhost.")
@@ -146,6 +152,14 @@ def bootstrap_admin_from_environment():
             if not _revision:
                 raise RuntimeError("Production database has no applied Alembic migration revision.")
     migrate_sqlite_schema()
+    cleanup_db = next(get_db())
+    try:
+        cleanup_db.query(models.AuthRateLimitEntry).filter(
+            models.AuthRateLimitEntry.window_started_at < datetime.utcnow() - timedelta(days=7)
+        ).delete(synchronize_session=False)
+        cleanup_db.commit()
+    finally:
+        cleanup_db.close()
     email = os.getenv("LUSHORA_ADMIN_EMAIL", "").strip().lower()
     password = os.getenv("LUSHORA_ADMIN_PASSWORD", "")
     if not email or not password:
