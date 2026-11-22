@@ -5,22 +5,39 @@ Audit basis: repository source inspection (README, backend API routes/models, fr
 ## Completion rule
 Mark a task DONE only after implementation, automated tests, frontend production build, and functional/regression validation. External credentials, local-device/browser access, or real-world integrations must be explicitly marked BLOCKED/NEEDS USER TEST if unavailable.
 
-## Phase 0 — Existing foundation audit (IN PROGRESS)
-Audit snapshot (2026-11-22):
-- 93 FastAPI route declarations and 39 backend test functions found in source inspection; counts are not a completeness claim.
-- CI currently runs backend pytest and frontend production build only. No frontend unit/component or browser E2E job is configured.
-- SQLite schema changes are handled by a custom migration helper; README explicitly says production should use Alembic. No production backup/restore evidence or restore drill is in repo.
-- Notification worker retries exist, but worker is a standalone infinite-loop process and deployment/observability/retry recovery still require operational validation.
-- Sensitive verification document images were found under backend/private_verification_uploads. The files have now been removed from the current branch tree and the upload folders added to .gitignore. Their Git history may still contain the documents; history rewrite and external incident-response steps are NOT done and require explicit approval/coordination.
-- Frontend build passes; visual, responsive, keyboard/accessibility, browser journey and local device validation are not yet evidenced.
-- Production startup now validates authentication secret strength, disables development OTP, and requires trusted HTTPS CORS origins; regression tests added. Latest security-guard changes are awaiting CI confirmation.
-- Authentication hardening implemented: persistent hashed-identifier rate-limit counters for login failures, registration attempts, OTP request (phone/hour, phone/day, IP/hour) and OTP verification (phone/IP/hour); lockouts return HTTP 429 with Retry-After. Login success clears only email-specific failures; IP counters are retained. Regression tests cover threshold lockout and OTP attempt consumption. CI is pending for the latest commit.
-- [ ] Validate current marketplace/customer/provider/admin flows end-to-end
-- [ ] Audit current tests for meaningful assertions and coverage gaps
-- [ ] Check existing UI consistency, responsiveness, accessibility, loading/error/empty states
-- [ ] Audit database migration, backups, sensitive upload handling and security
-- [x] Establish repository master backlog (feature/test matrix still needs detailed validation)
-- [x] Initial source/CI audit snapshot recorded; remediation and functional validation remain
+## Phase 0 — Existing foundation audit (REMEDIATION IN PROGRESS)
+Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires green CI on the latest branch head plus the checklist evidence below.
+
+### Remediation status
+- [x] Master backlog established.
+- [x] Backend test suite and frontend production build are part of CI.
+- [x] Persistent hashed-identifier rate-limit implementation and regression tests for login, registration, OTP request/verification thresholds.
+- [x] Production startup guards for weak auth secrets, development OTP, CORS, PostgreSQL, private upload and backup configuration; regression tests exist.
+- [x] Demo-seed disabled in production; regression test exists.
+- [x] SQLite migration compatibility fixes for partial legacy schemas; tests added.
+- [x] Browser E2E coverage added for customer OTP/profile/mobile, guest discovery/booking, provider signup and admin login. Selector and wait logic remediation is ongoing.
+- [x] Operational backup/restore scripts and CI PostgreSQL service drill added; CI URL normalization and drill execution are still being corrected/validated.
+- [ ] Latest CI green: backend tests, Playwright E2E, pip-audit, npm audit, frontend build, PostgreSQL migration/backup/restore drill.
+- [ ] Auth: verify lockout thresholds/reset, concurrent request behavior, privacy of hashed identifiers, OTP expiry/replay/attempt consumption, token expiry/tampering/revocation/version invalidation.
+- [ ] Security audit events: verify sensitive action coverage, no credential/OTP/document PII in events, admin-only access and tamper-resistance assumptions.
+- [ ] Production config: test bootstrap-admin safety, secret rotation requirements, CORS exact origins, HTTPS, secure cookies/headers, file-storage isolation.
+- [ ] Database: run Alembic against PostgreSQL, test upgrades from supported legacy schemas, rollback/recovery plan and migration locking.
+- [ ] Backup/restore: CI drill must pass and validate restored marker/schema; production-like restore, row-count comparison, RPO/RTO evidence still needed.
+- [ ] Sensitive verification files: current-tree removal and ignore rules are implemented; Git history exposure review and incident-response decision remain pending. Do not rewrite history without explicit approval.
+- [ ] Browser journeys: customer OTP/profile/search/book/cancel/reschedule; provider signup/verification/services/schedule/bookings; admin login/approval/moderation. Expand assertions and ensure reliable green runs.
+- [ ] Mobile responsiveness: viewport overflow, touch controls, navigation and modal behavior on phone/tablet sizes.
+- [ ] Accessibility: keyboard-only navigation, focus visibility/order, accessible names/labels, contrast and automated accessibility scan.
+- [ ] UI states: systematic loading, empty, error, success, offline and validation-state audit.
+- [ ] Notification worker: retry/backoff, failed delivery recovery, idempotency, dead-letter/monitoring, worker deployment and shutdown/recovery.
+- [ ] Production release checklist: staging smoke test, security review, backup/restore evidence, rollback, monitoring and incident contacts.
+- [ ] Phase 0 sign-off only after all blocking checks have evidence; no code-presence-only sign-off.
+
+### Known CI failures being remediated (2026-11-22)
+- [ ] Browser E2E OTP wait was querying a null input before UI render; replaced with locator wait and value assertion.
+- [ ] Browser E2E category selector was brittle; switched to category-chip locator.
+- [ ] Browser E2E admin assertion used stale heading; corrected to current Dashboard heading.
+- [ ] SQLite partial-schema migration attempted to alter missing tables; guards added and staff migration SQL corrected.
+- [ ] PostgreSQL backup/restore drill initially used PostgreSQL+psycopg URL syntax with psql; CI script normalizes psql URLs. Latest run pending.
 
 ## Phase 1 — Customer & provider profile completion
 - [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
