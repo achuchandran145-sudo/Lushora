@@ -25,7 +25,7 @@ def test_booking_creation_and_invalid_service():
     client.post('/api/admin/demo-seed')
     p=client.get('/api/providers').json()[0]
     service=p['services'][0]
-    payload={'customer_name':'Test Customer','customer_phone':'9876543210','provider_id':p['id'],'service_id':service['id'],'appointment_at':(datetime.now()+timedelta(days=2)).isoformat(),'notes':'Test'}
+    payload={'customer_name':'Test Customer','customer_phone':'9876543210','provider_id':p['id'],'service_id':service['id'],'appointment_at':datetime.combine((datetime.now()+timedelta(days=2)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat(),'notes':'Test'}
     r=client.post('/api/bookings',json=payload)
     assert r.status_code==201
     assert r.json()['status']=='requested'
@@ -43,7 +43,7 @@ def test_overlapping_booking_rejected_but_non_overlapping_allowed():
     client.post('/api/admin/demo-seed')
     p = client.get('/api/providers', params={'city':'Coimbatore','category':'Salon'}).json()[0]
     service = p['services'][0]
-    start = datetime.now() + timedelta(days=3)
+    start = datetime.combine((datetime.now()+timedelta(days=3)).date(),datetime.strptime('10:00','%H:%M').time())
     payload = {
         'customer_name':'First Customer',
         'customer_phone':'9876543210',
@@ -206,7 +206,7 @@ def test_booking_cancellation_requires_owner_and_allowed_state():
     customer=client.post('/api/auth/register',json={'full_name':'Cancel Owner','email':'cancel-owner@example.com','phone':'9876543260','password':'StrongPass123','role':'customer'})
     token=customer.json()['access_token'];headers={'Authorization':f'Bearer {token}'}
     provider=client.get('/api/providers').json()[0];service=provider['services'][0]
-    payload={'customer_name':'Cancel Owner','customer_phone':'9876543260','provider_id':provider['id'],'service_id':service['id'],'appointment_at':(datetime.now()+timedelta(days=5)).isoformat(),'notes':''}
+    payload={'customer_name':'Cancel Owner','customer_phone':'9876543260','provider_id':provider['id'],'service_id':service['id'],'appointment_at':datetime.combine((datetime.now()+timedelta(days=5)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat(),'notes':''}
     booking=client.post('/api/bookings',headers=headers,json=payload)
     assert booking.status_code==201
     booking_id=booking.json()['id']
