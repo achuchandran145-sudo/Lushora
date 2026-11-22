@@ -130,6 +130,8 @@ def create_payment(payload:dict,user:models.User=Depends(current_user),db:Sessio
     booking=db.query(models.Booking).filter(models.Booking.id==booking_id,models.Booking.customer_user_id==user.id).first()
     if not booking: raise HTTPException(404,"Booking not found for this customer")
     if booking.status not in {"requested","confirmed"}: raise HTTPException(400,"Payment is not available for this booking status")
+    pending=db.query(models.Payment).filter(models.Payment.booking_id==booking.id,models.Payment.status=="pending").first()
+    if pending: raise HTTPException(409,"A pending payment already exists for this booking")
     service=db.query(models.Service).filter(models.Service.id==booking.service_id).first()
     if not service: raise HTTPException(404,"Booking service not found")
     payment=models.Payment(booking_id=booking.id,customer_user_id=user.id,amount_inr=int(service.price_inr),status="pending",idempotency_key=key,gateway="unconfigured")
