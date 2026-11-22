@@ -115,6 +115,10 @@ def test_customer_otp_profile_and_mobile_homepage(browser, e2e_servers):
     otp_input.fill(otp_input.input_value())
     browser.get_by_role("button", name="VERIFY & CONTINUE").click()
     browser.wait_for_url("**/customer/profile", timeout=15000)
+    browser.wait_for_function("""() => {
+      const button = Array.from(document.querySelectorAll("button")).find(el => el.textContent.trim().includes("SAVE & CONTINUE"));
+      return Boolean(button && !button.disabled);
+    }""", timeout=15000)
 
     browser.get_by_label("First name").fill("Browser")
     browser.get_by_label("Last name").fill("Customer")
