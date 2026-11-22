@@ -6,11 +6,19 @@ Audit basis: repository source inspection (README, backend API routes/models, fr
 Mark a task DONE only after implementation, automated tests, frontend production build, and functional/regression validation. External credentials, local-device/browser access, or real-world integrations must be explicitly marked BLOCKED/NEEDS USER TEST if unavailable.
 
 ## Phase 0 — Existing foundation audit (IN PROGRESS)
+Audit snapshot (2026-11-22):
+- 93 FastAPI route declarations and 39 backend test functions found in source inspection; counts are not a completeness claim.
+- CI currently runs backend pytest and frontend production build only. No frontend unit/component or browser E2E job is configured.
+- SQLite schema changes are handled by a custom migration helper; README explicitly says production should use Alembic. No production backup/restore evidence or restore drill is in repo.
+- Notification worker retries exist, but worker is a standalone infinite-loop process and deployment/observability/retry recovery still require operational validation.
+- Sensitive verification document images are present in the Git repository under backend/private_verification_uploads. Do not inspect their contents. This is a critical privacy exposure; current branch cleanup can remove them from the current tree, but Git-history purge and credential/identity-document response require explicit approval and coordination.
+- Frontend build passes; visual, responsive, keyboard/accessibility, browser journey and local device validation are not yet evidenced.
 - [ ] Validate current marketplace/customer/provider/admin flows end-to-end
 - [ ] Audit current tests for meaningful assertions and coverage gaps
 - [ ] Check existing UI consistency, responsiveness, accessibility, loading/error/empty states
 - [ ] Audit database migration, backups, sensitive upload handling and security
 - [x] Establish repository master backlog (feature/test matrix still needs detailed validation)
+- [x] Initial source/CI audit snapshot recorded; remediation and functional validation remain
 
 ## Phase 1 — Customer & provider profile completion
 - [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
