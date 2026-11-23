@@ -609,7 +609,10 @@ def _rate_limit_state(db: Session, scope: str, identifier: str, limit: int, wind
         models.AuthRateLimitEntry.identifier_hash == key
     ).first()
     if entry is None:
-        if consume and db.bind.dialect.name in {"sqlite", "postgresql"}:
+        # First-use checks can also arrive concurrently (for example, a burst of
+        # OTP verification requests from one IP). Use the unique key as the
+        # database arbitration point for both read-only checks and consumes.
+        if db.bind.dialect.name in {"sqlite", "postgresql"}:
             if db.bind.dialect.name == "sqlite":
                 from sqlalchemy.dialects.sqlite import insert as dialect_insert
             else:
