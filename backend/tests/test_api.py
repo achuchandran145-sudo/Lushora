@@ -1227,3 +1227,40 @@ def test_sensitive_verification_actions_are_audited_without_document_pii(monkeyp
             assert len(row.identifier_hash) == 64
     finally:
         db.close()
+
+
+def test_otp_challenge_can_be_atomically_consumed_only_once():
+    import app.main as main_module
+    from app.models import OTPChallenge
+
+    request = client.post("/api/v2/customer/otp/request", json={"phone": "9876543398"})
+    assert request.status_code == 200
+    db = SessionLocal()
+    try:
+        challenge = (
+            db.query(OTPChallenge)
+            .filter_by(phone="+919876543398")
+            .order_by(OTPChallenge.created_at.desc())
+            .first()
+        )
+        assert challenge is not None
+        challenge_id = challenge.id
+    finally:
+        db.close()
+
+    first_worker = SessionLocal()
+    second_worker = SessionLocal()
+    try:
+        assert main_module._consume_otp_challenge(first_worker, challenge_id) is True
+        assert main_module._consume_otp_challenge(second_worker, challenge_id) is False
+    finally:
+        first_worker.close()
+        second_worker.close()
+
+    db = SessionLocal()
+    try:
+        challenge = db.query(OTPChallenge).filter_by(id=challenge_id).one()
+        assert challenge.consumed is True
+        assert challenge.attempts == 1
+    finally:
+        db.close()
