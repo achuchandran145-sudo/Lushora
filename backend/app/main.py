@@ -355,7 +355,7 @@ def admin_commission_rules(user:models.User=Depends(require_role("admin")),db:Se
     return [{"category":category,"commission_percent":configured.get(category,0)} for category in CATEGORIES]
 
 @app.put("/api/admin/commission-rules")
-def update_admin_commission_rules(payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+def update_admin_commission_rules(payload:dict,request:Request,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     rules=payload.get("rules")
     if not isinstance(rules,list) or len(rules)>len(CATEGORIES): raise HTTPException(400,"rules must be a list of category commission settings")
     seen=set()
@@ -369,6 +369,13 @@ def update_admin_commission_rules(payload:dict,user:models.User=Depends(require_
         row=db.query(models.CommissionRule).filter_by(category=item["category"]).first()
         if row: row.commission_percent=item["commission_percent"]
         else: db.add(models.CommissionRule(category=item["category"],commission_percent=item["commission_percent"]))
+    _audit_security_event(
+        db, "admin_commission_rules_updated",
+        "categories:" + ",".join(sorted(seen)),
+        request.client.host if request.client else "unknown",
+        user.id,
+        commit=False,
+    )
     db.commit()
     configured={r.category:r.commission_percent for r in db.query(models.CommissionRule).all()}
     return [{"category":category,"commission_percent":configured.get(category,0)} for category in CATEGORIES]
@@ -426,7 +433,7 @@ def admin_refund_list(status:str|None=None,limit:int=Query(100,ge=1,le=500),offs
     return {"total":total,"limit":limit,"offset":offset,"refunds":[{"id":r.id,"payment_id":r.payment_id,"booking_id":r.booking_id,"customer_user_id":r.customer_user_id,"amount_inr":r.amount_inr,"status":r.status,"reason":r.reason,"requested_at":r.requested_at,"reviewed_at":r.reviewed_at,"reviewer_user_id":r.reviewer_user_id,"reviewer_note":r.reviewer_note,"external_reference":r.external_reference} for r in rows]}
 
 @app.patch("/api/admin/refunds/{refund_id}/review")
-def review_refund(refund_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+def review_refund(refund_id:int,payload:dict,request:Request,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     refund=db.query(models.Refund).filter(models.Refund.id==refund_id).first()
     if not refund: raise HTTPException(404,"Refund not found")
     action=str(payload.get("status","")).strip().lower()
@@ -444,10 +451,18 @@ def review_refund(refund_id:int,payload:dict,user:models.User=Depends(require_ro
         refund.status="processed";refund.external_reference=str(gateway_refund.get("id",""));refund.reviewer_user_id=user.id;refund.reviewer_note=str(payload.get("reviewer_note","")).strip()[:1000];refund.reviewed_at=datetime.utcnow()
         total_processed=processed_total+refund.amount_inr
         payment.status="refunded" if total_processed>=payment.amount_inr else "partially_refunded"
+        _audit_security_event(
+            db, "admin_refund_processed", f"refund:{refund.id}",
+            request.client.host if request.client else "unknown", user.id, commit=False
+        )
         db.commit();db.refresh(refund)
         return {"id":refund.id,"status":refund.status,"external_reference":refund.external_reference,"payment_status":payment.status,"message":"Refund submitted to Razorpay; gateway response recorded"}
     if refund.status not in {"requested","reviewing","approved"}: raise HTTPException(409,"Refund is no longer reviewable")
     refund.status=action; refund.reviewer_user_id=user.id; refund.reviewer_note=str(payload.get("reviewer_note","")).strip()[:1000]; refund.reviewed_at=datetime.utcnow()
+    _audit_security_event(
+        db, "admin_refund_reviewed", f"refund:{refund.id}:{action}",
+        request.client.host if request.client else "unknown", user.id, commit=False
+    )
     db.commit(); db.refresh(refund)
     return {"id":refund.id,"status":refund.status,"reviewer_user_id":refund.reviewer_user_id,"reviewed_at":refund.reviewed_at,"reviewer_note":refund.reviewer_note,"message":"Refund review updated; approval does not transfer money"}
 
@@ -557,14 +572,24 @@ def _normalize_phone(phone: str) -> str:
     return "+91" + digits
 
 
-def _audit_security_event(db: Session, event_type: str, identifier: str = "", ip: str = "", user_id: int | None = None):
+def _audit_security_event(
+    db: Session,
+    event_type: str,
+    identifier: str = "",
+    ip: str = "",
+    user_id: int | None = None,
+    *,
+    commit: bool = True,
+):
+    """Append a privacy-preserving security event; optionally join the caller's transaction."""
     db.add(models.SecurityAuditEvent(
         user_id=user_id,
         event_type=event_type,
         identifier_hash=_rate_limit_identifier(identifier) if identifier else "",
         ip_hash=_rate_limit_identifier(ip) if ip else ""
     ))
-    db.commit()
+    if commit:
+        db.commit()
 
 def _rate_limit_identifier(identifier: str) -> str:
     return hmac.new(AUTH_SECRET, str(identifier).strip().lower().encode(), hashlib.sha256).hexdigest()
@@ -1468,7 +1493,7 @@ def submit_business_verification(payload: dict, user: models.User = Depends(requ
     return {"id":row.id,"status":row.status,"message":"Verification submitted. Your account remains pending admin approval."}
 
 @app.post("/api/v2/provider/verification/document/{doc_type}")
-async def upload_verification_document(doc_type: str, file: UploadFile = File(...), user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
+async def upload_verification_document(doc_type: str, request: Request, file: UploadFile = File(...), user: models.User = Depends(require_role("provider")), db: Session = Depends(get_db)):
     if doc_type not in {"aadhaar","pan","business"}: raise HTTPException(400,"Unsupported document type")
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.owner_user_id==user.id).first()
     if not row: raise HTTPException(404,"Submit verification details before uploading documents")
@@ -1502,16 +1527,26 @@ async def upload_verification_document(doc_type: str, file: UploadFile = File(..
     (folder/safe_name).write_bytes(data)
     # Persist relative private-storage path for authenticated document retrieval.
     stored_path=str((folder/safe_name).relative_to(VERIFICATION_UPLOAD_DIR))
-    setattr(row,doc_type+"_document_name",stored_path);db.commit()
+    setattr(row,doc_type+"_document_name",stored_path)
+    _audit_security_event(
+        db, "provider_verification_document_uploaded",
+        f"verification:{row.id}:document:{doc_type}",
+        request.client.host if request.client else "unknown", user.id, commit=False
+    )
+    db.commit()
     return {"uploaded":True,"document_type":doc_type,"message":"Document uploaded to private business verification folder"}
 
 @app.get("/api/v2/admin/verifications")
-def admin_verification_list(status: str = "submitted", user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+def admin_verification_list(request: Request, status: str = "submitted", user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
     rows=db.query(models.BusinessVerification).filter(models.BusinessVerification.status==status).order_by(models.BusinessVerification.submitted_at.asc()).all()
+    _audit_security_event(
+        db, "admin_verification_queue_viewed", f"status:{status}",
+        request.client.host if request.client else "unknown", user.id
+    )
     return [{"id":r.id,"owner_user_id":r.owner_user_id,"owner_name":(u.full_name if (u:=db.query(models.User).filter(models.User.id==r.owner_user_id).first()) else ""),"owner_email":(u.email if u else ""),"owner_phone":(u.phone if u else ""),"business_name":r.business_name,"categories":json.loads(r.categories_json),"city":r.city,"locality":r.locality,"address":r.address,"aadhaar_last4":r.aadhaar_last4,"pan_number":r.pan_number,"documents":{"aadhaar":bool(r.aadhaar_document_name),"pan":bool(r.pan_document_name),"business":bool(r.business_document_name)},"status":r.status,"admin_notes":r.admin_notes,"submitted_at":r.submitted_at} for r in rows]
 
 @app.get("/api/v2/admin/verifications/{verification_id}/document/{doc_type}")
-def admin_get_verification_document(verification_id:int,doc_type:str,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+def admin_get_verification_document(verification_id:int,doc_type:str,request:Request,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     if doc_type not in {"aadhaar","pan","business"}: raise HTTPException(400,"Unsupported document type")
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
     if not row: raise HTTPException(404,"Verification not found")
@@ -1519,6 +1554,11 @@ def admin_get_verification_document(verification_id:int,doc_type:str,user:models
     if not filename: raise HTTPException(404,"Document not uploaded")
     target=(VERIFICATION_UPLOAD_DIR/filename).resolve()
     if VERIFICATION_UPLOAD_DIR not in target.parents or not target.is_file(): raise HTTPException(404,"Document not uploaded")
+    _audit_security_event(
+        db, "admin_verification_document_viewed",
+        f"verification:{verification_id}:document:{doc_type}",
+        request.client.host if request.client else "unknown", user.id
+    )
     # Return a PDF consistently: preserve uploaded PDFs and convert JPG/PNG uploads to PDF.
     business_label=re.sub(r"[^A-Za-z0-9._-]+","_",row.business_name.strip()).strip("._-") or "business"
     download_name=f"{business_label}_{doc_type}_verification.pdf"
@@ -1535,13 +1575,14 @@ def admin_get_verification_document(verification_id:int,doc_type:str,user:models
         raise HTTPException(422,"Unable to convert this verification image to PDF")
 
 @app.patch("/api/v2/admin/verifications/{verification_id}")
-def admin_review_verification(verification_id:int,payload:dict,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+def admin_review_verification(verification_id:int,payload:dict,request:Request,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
     if not row: raise HTTPException(404,"Verification not found")
     action=str(payload.get("status","")).lower();notes=str(payload.get("admin_notes","")).strip()
     if action=="pending": action="submitted"
     if action not in {"approved","rejected","under_review","submitted"}: raise HTTPException(400,"Status must be approved, rejected, under_review or submitted")
     if action=="approved" and (not row.aadhaar_document_name or not row.pan_document_name or not row.business_document_name): raise HTTPException(400,"All three verification documents must be uploaded before approval")
+    previous_status = row.status
     row.status=action;row.admin_notes=notes;row.reviewed_at=datetime.utcnow() if action in {"approved","rejected"} else None
     if action=="approved":
         userrow=db.query(models.User).filter(models.User.id==row.owner_user_id).first()
@@ -1551,13 +1592,22 @@ def admin_review_verification(verification_id:int,payload:dict,user:models.User=
         for cat in cats:
             existing=db.query(models.Provider).filter(models.Provider.owner_user_id==row.owner_user_id,models.Provider.category==cat).first()
             if not existing: db.add(models.Provider(owner_user_id=row.owner_user_id,approval_status="approved",name=row.business_name,category=cat,city=row.city,locality=row.locality,description=row.address,verified=True))
+    _audit_security_event(
+        db, "admin_verification_reviewed",
+        f"verification:{verification_id}:{previous_status}->{action}",
+        request.client.host if request.client else "unknown", user.id, commit=False
+    )
     db.commit();return {"id":row.id,"status":row.status,"message":"Verification review updated"}
 
 @app.delete("/api/v2/admin/verifications/{verification_id}")
-def admin_delete_verification(verification_id:int,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
+def admin_delete_verification(verification_id:int,request:Request,user:models.User=Depends(require_role("admin")),db:Session=Depends(get_db)):
     row=db.query(models.BusinessVerification).filter(models.BusinessVerification.id==verification_id).first()
     if not row: raise HTTPException(404,"Verification not found")
     owner_id=row.owner_user_id
+    _audit_security_event(
+        db, "admin_verification_deleted", f"verification:{verification_id}",
+        request.client.host if request.client else "unknown", user.id, commit=False
+    )
     # Remove verification files only after resolving paths within the private storage root.
     for doc_type in ("aadhaar","pan","business"):
         stored=getattr(row,doc_type+"_document_name","")
