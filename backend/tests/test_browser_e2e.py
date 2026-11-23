@@ -279,22 +279,22 @@ def test_customer_can_cancel_and_reschedule_own_bookings(browser, e2e_servers):
     first_row.wait_for(timeout=15000)
     second_row.wait_for(timeout=15000)
 
-    # Reschedule the second booking to a valid free slot, and verify the
-    # updated request before cancelling the first booking.
-    second_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{second_booking_id} · requested")
-    second_row.get_by_role("button", name="Reschedule", exact=True).click()
-    rescheduled_time = f"{target.isoformat()}T12:00"
-    second_row.get_by_label("New appointment time").fill(rescheduled_time)
-    second_row.get_by_role("button", name="Save new time", exact=True).click()
-    browser.get_by_role("status").filter(has_text="Booking rescheduled successfully.").wait_for(timeout=15000)
-
-    # Cancellation requires a deliberate confirmation and refreshes the row.
+    # Cancellation requires a deliberate confirmation and releases the
+    # original slot for another customer appointment.
     first_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{first_booking_id} · requested")
     first_row.get_by_role("button", name="Cancel", exact=True).click()
     first_row.get_by_role("button", name="Confirm cancellation", exact=True).click()
     browser.get_by_role("status").filter(has_text="Booking cancelled successfully.").wait_for(timeout=15000)
     cancelled_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{first_booking_id} · cancelled")
     cancelled_row.wait_for(timeout=15000)
+
+    # Reschedule the other booking into the cancelled booking's newly freed slot.
+    second_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{second_booking_id} · requested")
+    second_row.get_by_role("button", name="Reschedule", exact=True).click()
+    rescheduled_time = f"{target.isoformat()}T{first_slot}"
+    second_row.get_by_label("New appointment time").fill(rescheduled_time)
+    second_row.get_by_role("button", name="Save new time", exact=True).click()
+    browser.get_by_role("status").filter(has_text="Booking rescheduled successfully.").wait_for(timeout=15000)
 
     token = account["access_token"]
     bookings_request = urllib.request.Request(
