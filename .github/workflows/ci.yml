@@ -92,6 +92,19 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/backend
         run: pytest -q
+      - name: Create isolated PostgreSQL concurrency test database
+        env:
+          PGPASSWORD: lushora_ci_password
+        run: createdb -h 127.0.0.1 -U lushora lushora_concurrency_test
+      - name: Run PostgreSQL concurrency regression tests
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          LUSHORA_DATABASE_URL: postgresql+psycopg://lushora:lushora_ci_password@127.0.0.1:5432/lushora_concurrency_test
+          LUSHORA_ALLOW_POSTGRES_CONCURRENCY_TESTS: "1"
+        run: |
+          python -m alembic -c alembic.ini upgrade head
+          pytest -q tests/test_postgres_concurrency.py
   frontend-build:
     runs-on: ubuntu-22.04
     steps:
