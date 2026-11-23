@@ -13,6 +13,14 @@ depends_on = None
 
 
 def upgrade():
+    # 0001_initial uses the current SQLAlchemy metadata as its create_all()
+    # source. On a brand-new database that can include this table already.
+    # Existing databases stamped at 0001 do not have it yet.
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if inspector.has_table("admin_recovery_tokens"):
+        return
+
     op.create_table(
         "admin_recovery_tokens",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -30,8 +38,17 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_index("ix_admin_recovery_tokens_expires_at", table_name="admin_recovery_tokens")
-    op.drop_index("ix_admin_recovery_tokens_token_digest", table_name="admin_recovery_tokens")
-    op.drop_index("ix_admin_recovery_tokens_purpose", table_name="admin_recovery_tokens")
-    op.drop_index("ix_admin_recovery_tokens_user_id", table_name="admin_recovery_tokens")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("admin_recovery_tokens"):
+        return
+    existing_indexes = {item["name"] for item in inspector.get_indexes("admin_recovery_tokens")}
+    for name in (
+        "ix_admin_recovery_tokens_expires_at",
+        "ix_admin_recovery_tokens_token_digest",
+        "ix_admin_recovery_tokens_purpose",
+        "ix_admin_recovery_tokens_user_id",
+    ):
+        if name in existing_indexes:
+            op.drop_index(name, table_name="admin_recovery_tokens")
     op.drop_table("admin_recovery_tokens")
