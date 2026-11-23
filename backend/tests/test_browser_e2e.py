@@ -246,7 +246,7 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
 
     browser.get_by_placeholder("Review notes or rejection reason").fill("E2E documents reviewed")
     browser.get_by_role("button", name="Approve", exact=True).click()
-    browser.get_by_role("button", name="Approved Businesses", exact=True).click()
+    browser.locator(".adm-nav").filter(has_text="Approved Businesses").click()
     approved_row = browser.get_by_role("row").filter(has_text="Browser Test Salon")
     approved_row.wait_for(timeout=15000)
     assert "approved" in approved_row.inner_text().lower()
@@ -258,12 +258,12 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.get_by_role("heading", name="Dashboard").wait_for(timeout=15000)
     browser.get_by_text("Browser Test Salon", exact=False).first.wait_for(timeout=10000)
 
-    browser.get_by_role("button", name="Business Profile", exact=True).click()
+    browser.locator(".biz-sidebar button").filter(has_text="Business Profile").click()
     browser.get_by_label("Business description").fill("Verified business profile updated by browser E2E.")
     browser.get_by_role("button", name="Save business profile", exact=True).click()
     browser.get_by_text("Business profile updated successfully.", exact=True).wait_for(timeout=10000)
 
-    browser.get_by_role("button", name="Staff", exact=True).click()
+    browser.locator(".biz-sidebar button").filter(has_text="Staff").click()
     browser.get_by_label("Full name").fill("E2E Senior Stylist")
     browser.get_by_label("Role").select_option("manager")
     browser.get_by_label("Phone").fill("9876543011")
@@ -271,7 +271,7 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.get_by_text("Team member added.", exact=True).wait_for(timeout=10000)
     browser.get_by_text("E2E Senior Stylist", exact=True).wait_for(timeout=10000)
 
-    browser.get_by_role("button", name="Locations", exact=True).click()
+    browser.locator(".biz-sidebar button").filter(has_text="Locations").click()
     browser.get_by_label("Branch name").fill("E2E Chennai Branch")
     browser.get_by_label("City").select_option("Chennai")
     browser.get_by_label("Locality").fill("Adyar")
@@ -281,7 +281,7 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.get_by_text("Branch added.", exact=True).wait_for(timeout=10000)
     browser.get_by_text("E2E Chennai Branch", exact=True).wait_for(timeout=10000)
 
-    browser.get_by_role("button", name="Availability", exact=True).click()
+    browser.locator(".biz-sidebar button").filter(has_text="Availability").click()
     browser.get_by_label("Opening time").fill("10:00")
     browser.get_by_label("Closing time").fill("19:00")
     browser.get_by_role("button", name="Save availability", exact=True).click()
