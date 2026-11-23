@@ -529,11 +529,27 @@ def test_provider_service_edit_owner_validation():
     assert client.patch(f'/api/provider/me/services/{service_id}',headers=headers,json={'name':'Deleted'}).status_code==404
 
 def test_booking_cancellation_requires_owner_and_allowed_state():
-    client.post('/api/admin/demo-seed')
     customer=client.post('/api/auth/register',json={'full_name':'Cancel Owner','email':'cancel-owner@example.com','phone':'9876543260','password':'StrongPass123!','role':'customer'})
+    provider_registration=client.post('/api/auth/register',json={'full_name':'Cancel Provider','email':'cancel-provider@example.com','phone':'9876543262','password':'StrongPass123!','role':'provider'})
     token=customer.json()['access_token'];headers={'Authorization':f'Bearer {token}'}
-    provider=client.get('/api/providers').json()[0];service=provider['services'][0]
-    payload={'customer_name':'Cancel Owner','customer_phone':'9876543260','provider_id':provider['id'],'service_id':service['id'],'appointment_at':datetime.combine((datetime.now()+timedelta(days=5)).date(),datetime.strptime('10:00','%H:%M').time()).isoformat(),'notes':''}
+    from app.database import get_db
+    from app import models
+    db=next(get_db())
+    try:
+        provider_user=db.query(models.User).filter(models.User.email=='cancel-provider@example.com').first()
+        provider=models.Provider(
+            owner_user_id=provider_user.id,name='Cancellation Owner Studio',
+            category='Salon',city='Coimbatore',locality='Vadavalli',
+            description='Cancellation notification test',approval_status='approved',verified=True
+        )
+        db.add(provider);db.flush()
+        service=models.Service(provider_id=provider.id,name='Test Appointment',price_inr=500,duration_minutes=30)
+        db.add(service);db.commit()
+        provider_id=provider.id;service_id=service.id;provider_user_id=provider_user.id
+    finally:
+        db.close()
+    appointment=datetime.combine((datetime.now()+timedelta(days=5)).date(),datetime.strptime('10:00','%H:%M').time())
+    payload={'customer_name':'Cancel Owner','customer_phone':'9876543260','provider_id':provider_id,'service_id':service_id,'appointment_at':appointment.isoformat(),'notes':''}
     booking=client.post('/api/bookings',headers=headers,json=payload)
     assert booking.status_code==201
     booking_id=booking.json()['id']
@@ -544,13 +560,10 @@ def test_booking_cancellation_requires_owner_and_allowed_state():
     assert cancelled.status_code==200 and cancelled.json()['status']=='cancelled'
     assert cancelled.json()['cancellation_policy']['fee_applies'] is False
     assert cancelled.json()['cancellation_policy']['fee_percent']==0
-    from app.database import get_db
-    from app import models
     db=next(get_db())
     try:
-        provider_row=db.query(models.Provider).filter(models.Provider.id==provider['id']).first()
         provider_notification=db.query(models.Notification).filter(
-            models.Notification.recipient_user_id==provider_row.owner_user_id,
+            models.Notification.recipient_user_id==provider_user_id,
             models.Notification.booking_id==booking_id,
             models.Notification.title=="Customer cancelled booking"
         ).first()
