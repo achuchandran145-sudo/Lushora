@@ -15,18 +15,6 @@ from . import payment_gateway
 
 if os.getenv('APP_ENV', os.getenv('ENVIRONMENT', 'development')).lower() != 'production':
     Base.metadata.create_all(bind=engine)
-# Add availability settings to existing SQLite provider tables.
-try:
-    from sqlalchemy import inspect as _inspect
-    if engine.dialect.name == 'sqlite' and 'availability_config' not in [c['name'] for c in _inspect(engine).get_columns('providers')]:
-        with engine.begin() as _conn: _conn.exec_driver_sql("ALTER TABLE providers ADD COLUMN availability_config TEXT DEFAULT '{}'")
-except Exception: pass
-# Add provider booking mutex version to older SQLite databases.
-try:
-    from sqlalchemy import inspect as _inspect
-    if engine.dialect.name == 'sqlite' and 'booking_lock_version' not in [col['name'] for col in _inspect(engine).get_columns('providers')]:
-        with engine.begin() as _conn: _conn.exec_driver_sql("ALTER TABLE providers ADD COLUMN booking_lock_version INTEGER NOT NULL DEFAULT 0")
-except Exception: pass
 app = FastAPI(title="LUSHORA API", version="0.1.0", description="Beauty and wellness discovery and booking MVP")
 # Configure production frontend origins through LUSHORA_CORS_ORIGINS (comma-separated).
 _CORS_ORIGINS=[origin.strip().rstrip("/") for origin in os.getenv("LUSHORA_CORS_ORIGINS","").split(",") if origin.strip()]
