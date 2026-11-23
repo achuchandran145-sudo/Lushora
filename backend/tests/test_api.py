@@ -298,7 +298,10 @@ def test_failed_login_creates_privacy_preserving_audit_event_and_admin_route_is_
     response=client.get('/api/admin/security/audit',headers={'Authorization':f'Bearer {admin_token}'})
     assert response.status_code==200
     assert any(item['event_type']=='login_failed' for item in response.json())
-    assert any(item['event_type']=='admin_security_audit_viewed' for item in response.json())
+    access_event=next(item for item in response.json() if item['event_type']=='admin_security_audit_viewed')
+    assert access_event['identifier_hash'] and len(access_event['identifier_hash'])==64
+    assert access_event['ip_hash'] and len(access_event['ip_hash'])==64
+    assert 'audit-admin@example.com' not in response.text
 
 def test_sqlite_migration_deduplicates_and_uniquifies_auth_rate_limits(tmp_path,monkeypatch):
     from sqlalchemy import create_engine,text,inspect
