@@ -1,0 +1,5 @@
+[allowlist]
+description = "Synthetic credentials and tokens in automated test fixtures only"
+paths = [
+  '''backend/tests/.*''',
+]

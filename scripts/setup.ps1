@@ -1,10 +1,20 @@
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Write-Host '=== LUSHORA setup ===' -ForegroundColor Magenta
+$script:PythonArgs = @()
 function Find-Python {
-  foreach ($cmd in @('py','python')) {
+  # Prefer versions with stable wheel support for the pinned backend dependencies.
+  foreach ($version in @('3.13','3.12')) {
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+      try { & py "-$version" --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $script:PythonArgs = @("-$version"); return "py" } } catch {}
+    }
+  }
+  foreach ($cmd in @('python','python3')) {
     if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-      try { & $cmd --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { return $cmd } } catch {}
+      try {
+        $versionText = & $cmd --version 2>$null
+        if ($versionText -match 'Python 3\.(12|13)\.') { return $cmd }
+      } catch {}
     }
   }
   return $null
@@ -17,7 +27,7 @@ if (-not $Python) {
     $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
     $Python = Find-Python
   }
-  if (-not $Python) { throw 'Python 3.12+ is required. Install from https://www.python.org/downloads/ and rerun.' }
+  if (-not $Python) { throw 'Python 3.12 or 3.13 is recommended for this MVP. Install from https://www.python.org/downloads/ and rerun.' }
 }
 $Node = Get-Command node -ErrorAction SilentlyContinue
 $Npm = Get-Command npm -ErrorAction SilentlyContinue
@@ -32,7 +42,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue) -or -not (Get-Command 
   throw 'Node.js LTS is required. Install from https://nodejs.org/ then rerun this launcher.'
 }
 Set-Location $Root
-if (-not (Test-Path 'backend\.venv')) { & $Python -m venv 'backend\.venv' }
+if (-not (Test-Path 'backend\.venv')) { & $Python @script:PythonArgs -m venv 'backend\.venv' }
 $PyExe = Join-Path $Root 'backend\.venv\Scripts\python.exe'
 & $PyExe -m pip install --upgrade pip
 & $PyExe -m pip install -r 'backend\requirements.txt'
