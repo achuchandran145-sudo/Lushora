@@ -68,3 +68,49 @@ def test_alembic_environment_url_overrides_application_default(
         assert revision == "0002_admin_recovery"
     finally:
         engine.dispose()
+
+
+
+def test_alembic_upgrade_registers_existing_schema_and_preserves_rows(
+    tmp_path, monkeypatch
+):
+    from sqlalchemy.orm import Session
+    from app.database import Base
+    from app import models  # noqa: F401
+
+    db_path = tmp_path / "existing-untracked-schema.db"
+    url = f"sqlite:///{db_path.as_posix()}"
+    engine = create_engine(url)
+    try:
+        # Reproduce the local MVP database: all current model tables exist,
+        # application data exists, but no Alembic version table is present.
+        Base.metadata.create_all(bind=engine)
+        with Session(engine) as session:
+            session.add(
+                models.User(
+                    full_name="Migration Preservation",
+                    email="migration-preservation@example.test",
+                    phone="9876543200",
+                    password_hash="test-only-hash",
+                    role="customer",
+                )
+            )
+            session.commit()
+
+        monkeypatch.setenv("LUSHORA_DATABASE_URL", url)
+        config = Config(str(ALEMBIC_INI))
+        config.set_main_option("sqlalchemy.url", "")
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            revision = connection.exec_driver_sql(
+                "SELECT version_num FROM alembic_version"
+            ).scalar_one()
+            preserved_email = connection.exec_driver_sql(
+                "SELECT email FROM users WHERE id = 1"
+            ).scalar_one()
+
+        assert revision == "0002_admin_recovery"
+        assert preserved_email == "migration-preservation@example.test"
+    finally:
+        engine.dispose()
