@@ -1250,6 +1250,12 @@ def update_booking_status(booking_id: int, status: str = Query(...), user: model
         _create_notification(db,booking.customer_user_id,status_title,f'Your booking #{booking.id} status is now {status}.',"booking_status",booking.id)
     if is_provider_owner and status in {"confirmed","rejected","cancelled","completed"}:
         _create_notification(db,user.id,"Booking updated",f'Booking #{booking.id} is now {status}.',"booking_status",booking.id)
+    elif is_customer_owner and status=="cancelled" and provider.owner_user_id:
+        _create_notification(
+            db, provider.owner_user_id, "Customer cancelled booking",
+            f'{booking.customer_name} cancelled booking #{booking.id}. The appointment slot is now available again.',
+            "booking_status", booking.id
+        )
     db.commit()
     cancellation_policy={"fee_applies":False,"fee_percent":0,"notice_hours":None}
     if status=="cancelled" and is_customer_owner:
