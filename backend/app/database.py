@@ -33,6 +33,8 @@ def migrate_sqlite_schema():
                 conn.execute(text("ALTER TABLE providers ADD COLUMN owner_user_id INTEGER"))
             if "approval_status" not in provider_cols:
                 conn.execute(text("ALTER TABLE providers ADD COLUMN approval_status VARCHAR(20) NOT NULL DEFAULT 'approved'"))
+            if "availability_config" not in provider_cols:
+                conn.execute(text("ALTER TABLE providers ADD COLUMN availability_config TEXT NOT NULL DEFAULT '{}'"))
 
             # Older MVP schema enforced one provider per owner. Verification approval now
             # creates one provider listing per selected category, so remove that legacy
