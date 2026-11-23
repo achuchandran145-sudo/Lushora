@@ -6,6 +6,16 @@ from urllib.error import HTTPError, URLError
 logger=logging.getLogger("lushora.notifications")
 CHANNELS=("push","whatsapp","sms")
 MAX_ATTEMPTS=int(os.getenv("NOTIFICATION_MAX_ATTEMPTS","5"))
+if not 1 <= MAX_ATTEMPTS <= 20:
+    raise RuntimeError("NOTIFICATION_MAX_ATTEMPTS must be between 1 and 20")
+
+# A worker can die after claiming a delivery. Do not automatically resend an
+# ambiguous in-flight message: the provider may already have accepted it.
+# Move stale claims to failed for operator reconciliation instead.
+SENDING_STALE_SECONDS=int(os.getenv("NOTIFICATION_SENDING_STALE_SECONDS","900"))
+if not 1 <= SENDING_STALE_SECONDS <= 86400:
+    raise RuntimeError("NOTIFICATION_SENDING_STALE_SECONDS must be between 1 and 86400")
+
 
 def _post_json(url,headers,payload):
     req=Request(url,data=json.dumps(payload).encode(),headers={**headers,"Content-Type":"application/json"},method="POST")
@@ -82,24 +92,102 @@ def dispatch_delivery(db,delivery):
     if delivery.channel=="sms": return _send_sms(delivery,notification,user)
     raise RuntimeError("Unsupported channel")
 
-def process_pending(db,batch_size=25):
+def _claim_delivery(db, delivery_id, now=None):
+    """Atomically claim one due delivery; concurrent workers can only win once."""
+    from sqlalchemy import or_
     from . import models
-    now=datetime.utcnow()
-    rows=db.query(models.NotificationDelivery).filter(models.NotificationDelivery.status.in_(["queued","retry"]),models.NotificationDelivery.attempts<MAX_ATTEMPTS,((models.NotificationDelivery.next_attempt_at==None)|(models.NotificationDelivery.next_attempt_at<=now))).order_by(models.NotificationDelivery.created_at).limit(batch_size).all()
-    processed=0
-    for d in rows:
-        d.status="sending";d.attempts+=1;d.updated_at=now;db.commit()
+
+    claimed_at = now or datetime.utcnow()
+    claimed = db.query(models.NotificationDelivery).filter(
+        models.NotificationDelivery.id == delivery_id,
+        models.NotificationDelivery.status.in_(["queued", "retry"]),
+        models.NotificationDelivery.attempts < MAX_ATTEMPTS,
+        or_(
+            models.NotificationDelivery.next_attempt_at.is_(None),
+            models.NotificationDelivery.next_attempt_at <= claimed_at,
+        ),
+    ).update(
+        {
+            models.NotificationDelivery.status: "sending",
+            models.NotificationDelivery.attempts: models.NotificationDelivery.attempts + 1,
+            models.NotificationDelivery.updated_at: claimed_at,
+        },
+        synchronize_session=False,
+    )
+    if claimed != 1:
+        db.rollback()
+        return None
+    db.commit()
+    return db.query(models.NotificationDelivery).filter_by(id=delivery_id).first()
+
+
+def process_pending(db,batch_size=25):
+    from sqlalchemy import or_
+    from . import models
+
+    now = datetime.utcnow()
+    stale_cutoff = now - timedelta(seconds=SENDING_STALE_SECONDS)
+
+    # A process may stop after the provider accepted a message but before the
+    # database records success. Such deliveries have an ambiguous outcome:
+    # fail them for manual reconciliation rather than risk an automatic duplicate.
+    db.query(models.NotificationDelivery).filter(
+        models.NotificationDelivery.status == "sending",
+        models.NotificationDelivery.updated_at <= stale_cutoff,
+    ).update(
+        {
+            models.NotificationDelivery.status: "failed",
+            models.NotificationDelivery.last_error: (
+                "Worker stopped during delivery; provider acceptance is unknown. "
+                "Check the provider before manually retrying."
+            ),
+            models.NotificationDelivery.next_attempt_at: None,
+            models.NotificationDelivery.updated_at: now,
+        },
+        synchronize_session=False,
+    )
+    db.commit()
+
+    candidate_ids = [
+        row[0]
+        for row in db.query(models.NotificationDelivery.id).filter(
+            models.NotificationDelivery.status.in_(["queued", "retry"]),
+            models.NotificationDelivery.attempts < MAX_ATTEMPTS,
+            or_(
+                models.NotificationDelivery.next_attempt_at.is_(None),
+                models.NotificationDelivery.next_attempt_at <= now,
+            ),
+        ).order_by(models.NotificationDelivery.created_at).limit(batch_size).all()
+    ]
+
+    processed = 0
+    for delivery_id in candidate_ids:
+        # The conditional UPDATE in _claim_delivery is the concurrency boundary.
+        # A worker that loses the race receives None and never calls the provider.
+        delivery = _claim_delivery(db, delivery_id)
+        if delivery is None:
+            continue
         try:
-            provider_id=dispatch_delivery(db,d)
-            d.status="sent";d.provider_message_id=provider_id or "";d.last_error="";d.next_attempt_at=None;d.updated_at=datetime.utcnow()
+            provider_id = dispatch_delivery(db, delivery)
+            delivery.status = "sent"
+            delivery.provider_message_id = provider_id or ""
+            delivery.last_error = ""
+            delivery.next_attempt_at = None
+            delivery.updated_at = datetime.utcnow()
         except Exception as exc:
-            d.last_error=str(exc)[:2000];d.updated_at=datetime.utcnow()
+            delivery.last_error = str(exc)[:2000]
+            delivery.updated_at = datetime.utcnow()
             if "consent is disabled" in str(exc).lower():
-                d.status="suppressed";d.next_attempt_at=None
-            elif d.attempts>=MAX_ATTEMPTS: d.status="failed"
+                delivery.status = "suppressed"
+                delivery.next_attempt_at = None
+            elif delivery.attempts >= MAX_ATTEMPTS:
+                delivery.status = "failed"
+                delivery.next_attempt_at = None
             else:
-                d.status="retry"
-                d.next_attempt_at=datetime.utcnow()+timedelta(seconds=min(3600,30*(2**(d.attempts-1))))
-                d.updated_at=datetime.utcnow()
-        db.commit();processed+=1
+                delivery.status = "retry"
+                delivery.next_attempt_at = datetime.utcnow() + timedelta(
+                    seconds=min(3600, 30 * (2 ** (delivery.attempts - 1)))
+                )
+        db.commit()
+        processed += 1
     return processed
