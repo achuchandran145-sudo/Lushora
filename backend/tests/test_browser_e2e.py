@@ -232,6 +232,18 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     assert browser.get_by_role("heading", name="Dashboard").count() == 1
 
 
+
+def test_admin_recovery_link_opens_reset_request_page(browser, e2e_servers):
+    browser.goto(e2e_servers["web"] + "/admin/login")
+    browser.get_by_role("link", name="Forgot your password?").click()
+    browser.wait_for_url("**/admin/recovery")
+    browser.get_by_role("heading", name="Reset your Admin password").wait_for()
+    browser.get_by_label("Admin email").fill("e2e-admin@lushora.test")
+    browser.get_by_role("button", name="SEND RECOVERY EMAIL").click()
+    browser.get_by_role("status").wait_for()
+    assert "If the details match" in browser.get_by_role("status").inner_text()
+
+
 def test_homepage_and_customer_login_accessibility_audit(browser, e2e_servers):
     axe_script = FRONTEND / "node_modules" / "axe-core" / "axe.min.js"
     assert axe_script.exists(), "CI must install axe-core before browser E2E"

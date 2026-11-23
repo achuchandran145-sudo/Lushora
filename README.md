@@ -140,6 +140,21 @@ admin@lushora.local
 ```
 Never commit passwords, tokens, or production secrets.
 
+### Admin account recovery
+
+- Admin sign-in provides **Forgot your password?** and **Forgot your Admin email?** links.
+- Password reset uses one-use, 30-minute links. Only an HMAC digest of the token is stored; completing a reset revokes all existing Admin sessions.
+- Admin email reminders are sent only to the separately configured recovery mailbox. Protect that mailbox with MFA.
+- Configure these backend environment variables; never commit their values:
+  - `LUSHORA_ADMIN_RECOVERY_EMAIL` — owner-controlled recovery inbox.
+  - `LUSHORA_ADMIN_RECOVERY_BASE_URL` — public frontend base URL, without a trailing slash (falls back to `LUSHORA_FRONTEND_URL`).
+  - `LUSHORA_SMTP_HOST`, `LUSHORA_SMTP_PORT` (587 with STARTTLS or 465 with implicit TLS), `LUSHORA_SMTP_USERNAME`, `LUSHORA_SMTP_PASSWORD`, `LUSHORA_SMTP_FROM`.
+  - Optional `LUSHORA_SMTP_TIMEOUT_SECONDS` (default 10).
+- Apply the Alembic migration before deploying: `python -m alembic -c alembic.ini upgrade head`.
+- Until SMTP and the recovery inbox are configured, the API deliberately sends no recovery email. Requests return generic responses and do not expose whether an account exists.
+
+
+
 ## Git workflow
 - Active working branch: **lushora-premium-v2**.
 - Pull before work:

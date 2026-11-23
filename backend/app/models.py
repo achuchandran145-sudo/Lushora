@@ -333,3 +333,14 @@ class AuthRateLimitEntry(Base):
     window_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     blocked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AdminRecoveryToken(Base):
+    __tablename__ = "admin_recovery_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    purpose: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    token_digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

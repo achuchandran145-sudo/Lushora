@@ -736,6 +736,161 @@ def login(payload: schemas.LoginIn, request: Request, db: Session = Depends(get_
     _audit_security_event(db, "login_success", email, ip, user.id)
     return {"access_token": _make_token(user.id, user.auth_token_version), "user": user}
 
+
+def _admin_recovery_base_url() -> str:
+    return (os.getenv("LUSHORA_ADMIN_RECOVERY_BASE_URL") or os.getenv("LUSHORA_FRONTEND_URL") or "http://localhost:5173").strip().rstrip("/")
+
+
+def _send_admin_recovery_email(recipient: str, subject: str, body: str) -> bool:
+    host = os.getenv("LUSHORA_SMTP_HOST", "").strip()
+    sender = os.getenv("LUSHORA_SMTP_FROM", "").strip()
+    if not host or not sender:
+        return False
+    import smtplib
+    from email.message import EmailMessage
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(body)
+    port = int(os.getenv("LUSHORA_SMTP_PORT", "587"))
+    username = os.getenv("LUSHORA_SMTP_USERNAME", "")
+    password = os.getenv("LUSHORA_SMTP_PASSWORD", "")
+    timeout = float(os.getenv("LUSHORA_SMTP_TIMEOUT_SECONDS", "10"))
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=timeout) as smtp:
+            if username:
+                smtp.login(username, password)
+            smtp.send_message(message)
+    else:
+        with smtplib.SMTP(host, port, timeout=timeout) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.ehlo()
+            if username:
+                smtp.login(username, password)
+            smtp.send_message(message)
+    return True
+
+
+def _issue_admin_recovery_token(db: Session, user: models.User, purpose: str) -> str:
+    now = datetime.utcnow()
+    db.query(models.AdminRecoveryToken).filter(
+        models.AdminRecoveryToken.user_id == user.id,
+        models.AdminRecoveryToken.purpose == purpose,
+        models.AdminRecoveryToken.consumed_at.is_(None)
+    ).update({models.AdminRecoveryToken.consumed_at: now}, synchronize_session=False)
+    raw = secrets.token_urlsafe(32)
+    digest = hmac.new(AUTH_SECRET, raw.encode(), hashlib.sha256).hexdigest()
+    db.add(models.AdminRecoveryToken(
+        user_id=user.id, purpose=purpose, token_digest=digest,
+        expires_at=now + timedelta(minutes=30)
+    ))
+    db.commit()
+    return raw
+
+
+def _send_admin_recovery_link(db: Session, user: models.User, purpose: str) -> bool:
+    raw = _issue_admin_recovery_token(db, user, purpose)
+    action = "reset your LUSHORA Admin password" if purpose == "password" else "view your LUSHORA Admin email address"
+    url = f"{_admin_recovery_base_url()}/admin/recovery?token={raw}&purpose={purpose}"
+    try:
+        sent = _send_admin_recovery_email(
+            user.email,
+            "LUSHORA Admin account recovery",
+            f"A request was made to {action}. This link expires in 30 minutes and can only be used once.\n\n{url}\n\nIf you did not request this, ignore this email."
+        )
+    except Exception:
+        sent = False
+    if not sent:
+        db.query(models.AdminRecoveryToken).filter(
+            models.AdminRecoveryToken.user_id == user.id,
+            models.AdminRecoveryToken.purpose == purpose,
+            models.AdminRecoveryToken.consumed_at.is_(None)
+        ).update({models.AdminRecoveryToken.consumed_at: datetime.utcnow()}, synchronize_session=False)
+        db.commit()
+    return sent
+
+
+@app.post("/api/admin/recovery/password/request")
+def admin_password_recovery_request(payload: dict, request: Request, db: Session = Depends(get_db)):
+    email = str(payload.get("email", "")).strip().lower()
+    ip = request.client.host if request.client else "unknown"
+    _consume_auth_limit(db, "admin_recovery_password_email", email or "missing", 3, 3600)
+    _consume_auth_limit(db, "admin_recovery_password_ip", ip, 10, 3600)
+    user = db.query(models.User).filter(
+        func.lower(models.User.email) == email,
+        models.User.role == "admin",
+        models.User.is_active == True
+    ).first() if email else None
+    if user:
+        _send_admin_recovery_link(db, user, "password")
+        _audit_security_event(db, "admin_password_recovery_requested", email, ip, user.id)
+    else:
+        _audit_security_event(db, "admin_password_recovery_requested", email, ip)
+    return {"message": "If the details match an active Admin account and email delivery is configured, recovery instructions will be sent."}
+
+
+@app.post("/api/admin/recovery/password/reset")
+def admin_password_recovery_reset(payload: dict, request: Request, db: Session = Depends(get_db)):
+    raw = str(payload.get("token", "")).strip()
+    password = str(payload.get("new_password", ""))
+    ip = request.client.host if request.client else "unknown"
+    _consume_auth_limit(db, "admin_recovery_reset_ip", ip, 10, 3600)
+    if not raw or len(raw) > 256:
+        raise HTTPException(400, "Recovery link is invalid or expired.")
+    if not _password_policy_valid(password):
+        raise HTTPException(400, "Password must be 12-128 characters and include uppercase, lowercase, number and special character.")
+    digest = hmac.new(AUTH_SECRET, raw.encode(), hashlib.sha256).hexdigest()
+    now = datetime.utcnow()
+    row = db.query(models.AdminRecoveryToken).filter(
+        models.AdminRecoveryToken.token_digest == digest,
+        models.AdminRecoveryToken.purpose == "password",
+        models.AdminRecoveryToken.consumed_at.is_(None),
+        models.AdminRecoveryToken.expires_at > now
+    ).with_for_update().first()
+    if not row:
+        raise HTTPException(400, "Recovery link is invalid or expired.")
+    user = db.query(models.User).filter(
+        models.User.id == row.user_id, models.User.role == "admin",
+        models.User.is_active == True
+    ).with_for_update().first()
+    if not user:
+        row.consumed_at = now
+        db.commit()
+        raise HTTPException(400, "Recovery link is invalid or expired.")
+    row.consumed_at = now
+    user.password_hash = _password_hash(password)
+    user.auth_token_version = int(user.auth_token_version or 0) + 1
+    db.commit()
+    _audit_security_event(db, "admin_password_recovery_completed", user.email, ip, user.id)
+    return {"message": "Admin password updated. Sign in using the new password."}
+
+
+@app.post("/api/admin/recovery/email/request")
+def admin_email_recovery_request(payload: dict, request: Request, db: Session = Depends(get_db)):
+    recovery_email = os.getenv("LUSHORA_ADMIN_RECOVERY_EMAIL", "").strip().lower()
+    provided = str(payload.get("recovery_email", "")).strip().lower()
+    ip = request.client.host if request.client else "unknown"
+    _consume_auth_limit(db, "admin_recovery_email_ip", ip, 5, 3600)
+    if recovery_email and hmac.compare_digest(provided, recovery_email):
+        users = db.query(models.User).filter(
+            models.User.role == "admin", models.User.is_active == True
+        ).order_by(models.User.id.asc()).all()
+        for user in users:
+            try:
+                _send_admin_recovery_email(
+                    recovery_email, "LUSHORA Admin login email reminder",
+                    f"An Admin email reminder was requested. Active Admin login email: {user.email}"
+                )
+            except Exception:
+                pass
+        _audit_security_event(db, "admin_email_recovery_requested", recovery_email, ip)
+    else:
+        _audit_security_event(db, "admin_email_recovery_requested", provided, ip)
+    return {"message": "If the recovery email is configured and matches, the Admin login email will be sent."}
+
+
 @app.post("/api/auth/logout")
 def logout(user: models.User = Depends(current_user), db: Session = Depends(get_db)):
     user.auth_token_version = int(user.auth_token_version or 0) + 1

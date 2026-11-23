@@ -28,7 +28,8 @@ def test_alembic_initial_migration_creates_schema_and_version(tmp_path, monkeypa
         assert 'auth_rate_limit_entries' in tables
         assert 'alembic_version' in tables
         revision=connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
-        assert revision=='0001_initial'
+        assert revision=='0002_admin_recovery'
+        assert 'admin_recovery_tokens' in tables
     finally:
         connection.close()
 
@@ -315,6 +316,75 @@ def test_sqlite_migration_deduplicates_and_uniquifies_auth_rate_limits(tmp_path,
         indexes=inspect(legacy_engine).get_indexes('auth_rate_limit_entries')
         assert any(index['name']=='uq_auth_rate_limit_scope_identifier' and index['unique'] for index in indexes)
     legacy_engine.dispose()
+
+
+def _create_recovery_admin(email="recovery-admin@example.com"):
+    db=SessionLocal()
+    try:
+        user=User(full_name="Recovery Admin",email=email,phone="",password_hash=_password_hash("OldStrongPass123!"),role="admin",is_active=True)
+        db.add(user);db.commit();db.refresh(user)
+        return user.id
+    finally:
+        db.close()
+
+
+def test_admin_password_recovery_is_generic_and_reset_token_is_one_use(monkeypatch):
+    import app.main as main_module
+    _create_recovery_admin()
+    sent=[]
+    monkeypatch.setattr(main_module,"_send_admin_recovery_email",lambda recipient,subject,body: sent.append((recipient,subject,body)) or True)
+    existing=client.post('/api/auth/login',json={'email':'recovery-admin@example.com','password':'OldStrongPass123!'})
+    old_token=existing.json()['access_token']
+    response=client.post('/api/admin/recovery/password/request',json={'email':'recovery-admin@example.com'})
+    unknown=client.post('/api/admin/recovery/password/request',json={'email':'unknown-admin@example.com'})
+    assert response.status_code==200 and unknown.status_code==200
+    assert response.json()==unknown.json()
+    assert len(sent)==1
+    raw=sent[0][2].split("token=",1)[1].split("&",1)[0]
+    changed=client.post('/api/admin/recovery/password/reset',json={'token':raw,'new_password':'NewStrongPassword456!'})
+    assert changed.status_code==200
+    assert client.get('/api/auth/me',headers={'Authorization':f'Bearer {old_token}'}).status_code==401
+    assert client.post('/api/auth/login',json={'email':'recovery-admin@example.com','password':'OldStrongPass123!'}).status_code==401
+    assert client.post('/api/auth/login',json={'email':'recovery-admin@example.com','password':'NewStrongPassword456!'}).status_code==200
+    replay=client.post('/api/admin/recovery/password/reset',json={'token':raw,'new_password':'AnotherStrongPassword456!'})
+    assert replay.status_code==400
+
+
+def test_admin_password_recovery_rejects_weak_password_and_expired_token(monkeypatch):
+    import app.main as main_module
+    _create_recovery_admin("recovery-expired@example.com")
+    sent=[]
+    monkeypatch.setattr(main_module,"_send_admin_recovery_email",lambda recipient,subject,body: sent.append(body) or True)
+    client.post('/api/admin/recovery/password/request',json={'email':'recovery-expired@example.com'})
+    raw=sent[0].split("token=",1)[1].split("&",1)[0]
+    weak=client.post('/api/admin/recovery/password/reset',json={'token':raw,'new_password':'weak'})
+    assert weak.status_code==400
+    db=SessionLocal()
+    try:
+        digest=hmac.new(main_module.AUTH_SECRET,raw.encode(),hashlib.sha256).hexdigest()
+        row=db.query(__import__('app.models',fromlist=['AdminRecoveryToken']).AdminRecoveryToken).filter_by(token_digest=digest).first()
+        row.expires_at=datetime.utcnow()-timedelta(seconds=1)
+        db.commit()
+    finally:
+        db.close()
+    expired=client.post('/api/admin/recovery/password/reset',json={'token':raw,'new_password':'NewStrongPassword456!'})
+    assert expired.status_code==400
+
+
+def test_admin_email_recovery_only_sends_to_configured_recovery_mailbox(monkeypatch):
+    monkeypatch.setenv("LUSHORA_ADMIN_RECOVERY_EMAIL","owner-recovery@example.com")
+    sent=[]
+    import app.main as main_module
+    monkeypatch.setattr(main_module,"_send_admin_recovery_email",lambda recipient,subject,body:sent.append((recipient,body)) or True)
+    _create_recovery_admin("admin-one@example.com")
+    _create_recovery_admin("admin-two@example.com")
+    mismatch=client.post('/api/admin/recovery/email/request',json={'recovery_email':'wrong@example.com'})
+    assert mismatch.status_code==200 and sent==[]
+    good=client.post('/api/admin/recovery/email/request',json={'recovery_email':'owner-recovery@example.com'})
+    assert good.status_code==200 and len(sent)==2
+    assert {x[0] for x in sent}=={"owner-recovery@example.com"}
+    assert "admin-one@example.com" in sent[0][1] or "admin-one@example.com" in sent[1][1]
+
 
 def test_customer_register_login_and_me():
     registration = client.post('/api/auth/register', json={'full_name':'Test User','email':'test-user@example.com','phone':'9876543210','password':'StrongPass123!','role':'customer'})
