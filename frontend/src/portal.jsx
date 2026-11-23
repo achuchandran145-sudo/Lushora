@@ -196,6 +196,7 @@ export default function PortalApp(){
  if(path.startsWith('/customer/profile')||path.startsWith('/customer/edit-profile')) return <CustomerProfileSetup/>;
  if(path.startsWith('/business/onboarding')) return <BusinessVerificationForm/>;
  if(path.startsWith('/business')) return <BusinessDashboard/>;
- if(path.startsWith('/admin')) return <AdminDashboard/>;
+ if(path.startsWith('/admin/recovery')) return <AdminRecovery/>;
+  if(path.startsWith('/admin')) return <AdminDashboard/>;
  return <LoginPortal kind="customer"/>;
 }
