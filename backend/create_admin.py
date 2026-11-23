@@ -8,7 +8,7 @@ from app.database import Base, engine, SessionLocal
 from app import models
 
 
-EMAIL_PATTERN = re.compile(r"^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def password_valid(password: str) -> bool:
