@@ -522,6 +522,11 @@ def test_provider_service_edit_owner_validation():
     assert edited.json()['duration_minutes']==45
     assert client.patch(f'/api/provider/me/services/{service_id}',headers=headers,json={'price_inr':-1}).status_code==400
     assert client.patch(f'/api/provider/me/services/{foreign_service_id}',headers=headers,json={'name':'Hijacked'}).status_code==404
+    assert client.delete(f'/api/provider/me/services/{foreign_service_id}',headers=headers).status_code==404
+    deleted=client.delete(f'/api/provider/me/services/{service_id}',headers=headers)
+    assert deleted.status_code==200
+    assert deleted.json()['message']=='Service deleted'
+    assert client.patch(f'/api/provider/me/services/{service_id}',headers=headers,json={'name':'Deleted'}).status_code==404
 
 def test_booking_cancellation_requires_owner_and_allowed_state():
     client.post('/api/admin/demo-seed')
