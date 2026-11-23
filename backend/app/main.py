@@ -25,6 +25,29 @@ if os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower() == "pro
 else:
     app.add_middleware(CORSMiddleware, allow_origins=list(dict.fromkeys(_CORS_ORIGINS)), allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?", allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+@app.middleware("http")
+async def apply_security_headers(request: Request, call_next):
+    """Add defensive headers and prevent caching of API responses containing user data."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'none'")
+
+    if request.url.path.startswith("/api/") or request.url.path == "/openapi.json":
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    # Production is deployed behind an HTTPS-terminating reverse proxy. HSTS is
+    # emitted only in production; the proxy must still enforce HTTPS redirects.
+    if _is_production_environment():
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
+
+    return response
+
+
 AUTH_SECRET = os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret").encode()
 
 def _is_production_environment() -> bool:
