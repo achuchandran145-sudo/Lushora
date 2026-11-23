@@ -149,14 +149,9 @@ def require_role(role: str):
 def bootstrap_admin_from_environment():
     _validate_production_settings()
     if _is_production_environment():
-        from sqlalchemy import inspect as _inspect
-        from sqlalchemy import text as _text
+        from .migration_guard import validate_database_revision
         with engine.connect() as _connection:
-            if not _inspect(engine).has_table("alembic_version"):
-                raise RuntimeError("Production database migrations are missing. Run backend/scripts/migrate_production.sh before starting the API.")
-            _revision = _connection.execute(_text("SELECT version_num FROM alembic_version")).scalar()
-            if not _revision:
-                raise RuntimeError("Production database has no applied Alembic migration revision.")
+            validate_database_revision(_connection)
     migrate_sqlite_schema()
     cleanup_db = next(get_db())
     try:
