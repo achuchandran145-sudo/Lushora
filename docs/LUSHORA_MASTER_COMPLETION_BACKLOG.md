@@ -1,0 +1,230 @@
+# LUSHORA Master Completion Backlog
+Branch: `lushora-premium-v2`
+Audit basis: repository source inspection (README, backend API routes/models, frontend portal and tests). Statuses are code-presence estimates; only features validated end-to-end are marked verified.
+
+## Completion rule
+Mark a task DONE only after implementation, automated tests, frontend production build, and functional/regression validation. External credentials, local-device/browser access, or real-world integrations must be explicitly marked BLOCKED/NEEDS USER TEST if unavailable.
+
+## Phase 0 — Existing foundation audit (REMEDIATION IN PROGRESS)
+
+**Current audit snapshot:** 2026-11-23  
+**Current branch:** `lushora-premium-v2`  
+**Current audited commit:** `21ae2f9feb152a401559a90eb391a680fc5233ea`  
+**Latest push CI:** [Run 967](https://github.com/achuchandran145-sudo/Lushora/actions/runs/45161292571) passed on this commit. Phase 0 is still **NOT COMPLETE**. CI validates the automated checks below; it does not replace staging/production, real-provider, physical-device, or incident-readiness evidence.
+
+### Latest automated evidence (2026-11-23)
+
+Latest verified push workflow: [CI run 967](https://github.com/achuchandran145-sudo/Lushora/actions/runs/45161292571).
+
+- Backend regression suite: **113 passed, 1 skipped** in 37.89 seconds; 1,036 warnings remain, primarily deprecations.
+- PostgreSQL 16 concurrency suite: **7 passed** in 1.39 seconds against the isolated `lushora_concurrency_test` database.
+- Concurrency coverage: 12 parallel first-use rate-limit checks; 12 parallel rate-limit consumes; 12 one-use OTP helper calls; 12 API OTP verification attempts yielding one customer session; 12 notification workers claiming one delivery exactly once; 8 simultaneous booking creates for one slot; and 2 simultaneous reschedules targeting one slot.
+- Frontend dependency audit and production build passed.
+- Python dependency audit, Gitleaks repository/history scan, PostgreSQL migration and backup/restore drill, browser E2E and configured axe checks passed in the same CI run.
+
+### Code-level remediation implemented and CI-verified
+
+- [x] Authentication: login and registration rate-limit regression tests, OTP request/verification limits, hashed identifier checks, OTP expiry/replay checks, token expiry/tampering/revocation/version checks.
+- [x] OTP single-use race: successful consumption is now a conditional database update; SQLite regression tests and the PostgreSQL parallel API verification test prove the same challenge can produce only one customer session.
+- [x] Authentication rate-limit first-use race: SQLite/PostgreSQL conflict-safe inserts protect both read-only limit checks and consuming requests when many workers first touch the same identifier; a 12-worker PostgreSQL test verifies one shared row and no duplicate-insert failures.
+- [x] PostgreSQL parallel concurrency regression suite: independent sessions/workers cover authentication limits, OTP verification, notification dispatch, booking creation and rescheduling. CI runs the suite against a dedicated disposable database; this is a concurrency regression gate, not a sustained capacity/load test.
+- [x] Admin bootstrap: rejects invalid email and weak passwords, refuses to promote an existing customer/provider account to Admin, and only rotates credentials for an existing Admin account. Regression tests cover creation, refusal, validation, and password rotation.
+- [x] Security audit: added events for provider verification-document uploads and Admin verification queue access, document views, review decisions, and permanent deletion; also logs Admin commission-rule changes and refund review/processing. Events use keyed hashes for references/IPs rather than recording PAN, Aadhaar values, document paths or document contents.
+- [x] Audit access/privacy regression: Admin audit endpoint role protection and a sensitive verification workflow test verify sampled actions are recorded without document PII in audit references.
+- [x] Admin audit-log access is itself recorded as `admin_security_audit_viewed`; user and IP references are HMAC-hashed, and tests verify the raw Admin email/IP are not returned.
+- [x] Notification worker: queued/retry deliveries are claimed with an atomic conditional update so competing workers cannot both claim the same delivery.
+- [x] Notification crash handling: stale `sending` rows are moved to `failed` for operator reconciliation, not automatically resent, because provider acceptance may be ambiguous after a worker crash.
+- [x] Notification retry/backoff, attempt exhaustion, consent suppression, one-winner claim, stale-delivery handling and worker shutdown/session behavior have regression coverage.
+- [x] CI includes backend/API tests, Playwright browser E2E, Gitleaks, Python/npm dependency audits, frontend build, PostgreSQL migration and backup/restore verification.
+- [x] Expanded provider/Admin browser journey: provider registration and verification documents, Admin document review/download and approval, approved-business visibility, provider dashboard, business-profile edit, staff creation, branch creation and availability update.
+- [x] Provider Services & Pricing portal repaired: providers can add and edit services through the existing owner-scoped APIs; browser E2E verifies create/edit and service card/price refresh.
+- [x] Provider service deletion remains owner-scoped; API regression verifies the owner can delete their service, cannot delete another provider's service, and cannot edit the deleted service.
+- [x] Customer booking lifecycle browser journey: authenticated customer creates two bookings through the public booking flow, cancels one with an explicit confirmation, and reschedules the other into the cancelled booking's released time slot. The test verifies both final records through the customer bookings API.
+- [x] Customer cancellation policy response is displayed in the dashboard; UI explicitly states that LUSHORA has not collected a cancellation fee.
+- [x] Customer cancellation creates an in-app notification for the business owner. API regression covers owner-linked providers, cancellation policy fields, notification recipient and message, foreign-customer denial and repeated-cancellation rejection.
+- [x] Existing API regression coverage also exercises reschedule ownership, invalid time, booking conflicts and valid rescheduling.
+
+### Remaining Phase 0 checks
+
+- [ ] Run sustained/ramped PostgreSQL load and capacity tests on a representative staging instance (worker counts beyond the 12-worker CI regression, latency percentiles, lock waits, error rates and recovery under load). CI proves parallel correctness, not production capacity.
+- [ ] Complete the security-audit operations review: current code logs Admin audit-log access with HMAC-hashed user/IP references and purges events older than 90 days during application startup. Verify scheduled retention (startup-only cleanup is not a continuous schedule), least-privilege/tamper-resistant external storage, and alerting against the deployed database/operations model.
+- [x] Add API security response headers and a no-store cache policy for `/api/*` and `/openapi.json`; HSTS is emitted only in production. Automated tests validate header values and production-only HSTS.
+- [ ] Verify HTTP-to-HTTPS redirects, browser-visible HSTS, and cache bypass through the actual staging reverse proxy/CDN. Application headers do not configure the proxy itself.
+- [ ] Validate Admin bootstrap/secret rotation procedure in staging, including first-login rotation and invalidation of prior sessions.
+- [ ] PostgreSQL: test upgrades from every supported legacy production schema, migration lock behavior, and an approved rollback/recovery exercise. CI verifies the current migration chain and restore drill, not every legacy deployment state.
+- [ ] Backup/restore: complete a production-like isolated restore, application smoke test, measured RPO/RTO, off-site/encryption/retention verification, and record the evidence.
+- [ ] Sensitive verification files: review the Git history and repository artifacts for previously committed identity documents or real secrets; rotate any historical secrets found. Do not rewrite history without explicit approval.
+- [ ] Extend customer browser tests to payment failure/refund states and booking error/empty/offline states; extend provider tests through full booking lifecycle and schedule/closure edge cases; extend Admin tests through rejection, moderation, finance actions and sensitive-action confirmations.
+- [ ] Responsive behavior: current automated overflow checks cover primary routes at 360, 390 and 768 px. Still test touch targets, menus, dialogs, booking forms and tablet/desktop layouts on real devices/browsers.
+- [ ] Accessibility: CI currently blocks serious/critical axe findings on the configured primary routes. Review lower-impact findings, more portal routes, full keyboard order, screen-reader names, focus restoration, contrast and manual WCAG behavior.
+- [ ] UI states: systematically verify loading, empty, validation, success, server-error, network/offline and retry states across customer, provider and Admin workflows.
+- [ ] Notifications: verify live FCM/WhatsApp/SMS delivery, provider rate limits/templates/consent, worker deployment, process supervision, queue alerting and operator reconciliation in an environment with real credentials. No live channel delivery is proven by unit tests.
+- [ ] Production release: run staging smoke tests; verify deployed domains, secrets, PostgreSQL, private storage, HTTPS, backups, monitoring/alert routes, rollback artifact, RPO/RTO and incident contacts.
+- [ ] Phase 0 sign-off only after all blocking checks have evidence or are explicitly accepted as release blockers by the project owner.
+
+### Environment-dependent blockers
+
+- [ ] Staging/production smoke tests — **BLOCKED: requires deployed URLs and authorized environment access**.
+- [ ] Production database migration/rollback and production-like restore — **BLOCKED: requires the actual hosting database and approved maintenance/restore window**.
+- [ ] Live notification delivery — **BLOCKED: requires real provider credentials and approved account configuration**.
+- [ ] Domain/HTTPS/proxy, monitoring/alerting, retention, incident contacts and measured RPO/RTO — **BLOCKED: requires hosting-platform configuration and operations ownership**.
+
+## Phase 1 — Customer & provider profile completion
+- [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
+- [x] Address and contact data model/UX completeness (profile fields and city/locality/address validation)
+- [x] Provider profile editing and onboarding completion UX (owner-scoped API/UI; CI build + regression test)
+- [x] Provider portfolio/gallery with image validation, size/dimension limits, owner management and public image retrieval (local storage; production storage hardening remains Phase 9)
+- [x] Provider service edit API (name, price, duration) with owner validation + regression tests
+- [x] Provider service edit UI in portal (name, price, duration; owner-checked API)
+- [x] Business operating hours, breaks, holidays and closure rules (working-day/hour/break validation and ISO closure dates; booking checks + regression tests)
+- [x] Staff/member profiles (owner-managed CRUD, role labels and active status); [ ] staff login and permission enforcement (future RBAC/security work)
+- [x] Multi-branch/locations support (owner-managed CRUD, city/locality/address/phone and active status; branch-level hours/service assignment remain future work)
+
+## Phase 2 — Booking engine
+Audit findings: current slot generation uses 30-minute stepping and naive server-local datetimes; booking creation checks working hours/breaks/closures and overlapping bookings, but concurrent requests can race because overlap validation is read-before-write. Prioritize DB-level provider locking and slot/time validation.
+- [x] Availability validation against provider schedule, service duration, breaks and closures (booking creation enforces rules)
+- [x] Slot generation uses 30-minute increments; booking creation enforces the same grid and interprets naive timestamps as India-local (Asia/Kolkata); timezone offsets are rejected
+- [x] Prevent double-booking under concurrent requests (provider-row lock/version update; concurrent-request regression test passes CI)
+- [x] Staff-specific booking capacity and assignment (customer can choose active provider staff; assigned bookings overlap only for the same staff; provider-wide/unassigned bookings reserve all capacity; staff-filtered slots and regression tests; staff hours still inherit provider hours)
+- [x] Break/holiday/closure integration (slot generation and booking creation both enforce provider working days, breaks, closed dates; regression tests)
+- [x] Booking confirmation UX and statuses (requested/confirmed/rejected/completed/cancelled lifecycle and role checks)
+- [x] Reschedule flow (customer/provider UI and API; validates availability, conflicts, owner access and 30-minute grid)
+- [x] Booking cancellation role/ownership/lifecycle validation and regression test
+- [x] Provider-configurable cancellation notice window and fee-percent hook (customer cancellation response reports fee applicability; no fee collection/accounting yet)
+- [x] Booking expiration/timeout (24-hour requested-state TTL, stale cleanup during booking/list operations, admin cleanup endpoint; regression test passes CI)
+- [x] Waitlist end-to-end MVP (customer join from booking modal, dashboard list/cancel, API validation/duplicate prevention/ownership; backend tests + frontend build pass CI)
+- [x] Booking calendar UI (provider date-filtered calendar view with daily appointments and status actions)
+- [x] Booking regression/journey coverage: create, schedule constraints, conflict/concurrency, status permissions, cancellation, reschedule, expiration and waitlist (backend CI verified)
+
+## Phase 3 — Payments & finance
+- [ ] Gateway selection/configuration and sandbox integration
+- [ ] Payment intent/order creation and secure verification/webhook handling
+- [x] Full payment and 20% advance payment record options (remaining balance tracked; no gateway collection yet)
+- [x] Payment record status/idempotency foundation (pending, cancellation, refund states; gateway lifecycle/webhooks remain pending)
+- [ ] Failed/pending payment recovery
+- [x] Refund request/review workflow foundation (manual; gateway refund execution and partial-refund accounting remain pending)
+- [x] Admin-configurable category commission rules (0–30%; API/UI and role/validation regression tests; not yet applied to collected payments or payout calculations)
+- [ ] Provider payout calculation and payout operations
+- [x] Admin payment ledger and summary with read-only reconciliation foundation (payment type and balance due fields, payment-type summary; gateway settlement matching remains pending)
+- [ ] Customer receipt/invoice
+- [ ] Admin finance dashboard and audit trail
+- [x] Payment record tests for owner scope, idempotency, pending duplicate prevention, cancellation and full/advance amount calculations; sandbox/live gateway tests blocked until gateway configured
+
+## Phase 4 — Reviews & reputation
+- [x] Review model/API foundation
+- [x] Reviews API: customer submission, customer listing, public provider listing
+- [x] Eligibility: completed booking owned by customer
+- [x] One review per booking (unique constraint + API conflict handling)
+- [x] Admin moderation API (approve/reject)
+- [x] Provider reply API
+- [x] Public ratings aggregated from approved reviews
+- [x] Customer review submission UI and submitted-review display
+- [ ] Provider/admin review UI (reply/moderation frontend)
+- [ ] Review model/API/UI
+- [ ] Reviews restricted to eligible completed bookings
+- [ ] One review per booking; edit policy
+- [ ] Rating aggregation
+- [ ] Review photo upload (secure)
+- [ ] Provider replies
+- [ ] Customer review reporting
+- [ ] Admin moderation queue and actions
+- [ ] Anti-abuse/fraud controls
+- [ ] Ratings shown in search/provider profile
+
+## Phase 5 — Notifications & communications
+- [ ] Event-triggered booking notifications
+- [ ] Customer/provider notification preferences and consent UX
+- [ ] Push device registration, delivery and retry validation
+- [ ] WhatsApp provider integration and approved templates
+- [ ] SMS provider integration and compliance/configuration
+- [ ] Booking reminders and cancellation/reschedule alerts
+- [ ] Delivery retry/dead-letter handling
+- [ ] In-app notification UX, unread state and deep links
+- [ ] Notification settings/admin observability
+- [ ] Credential-dependent delivery tests
+
+## Phase 6 — Subscription & monetization
+- [ ] Define category/area subscription plans and pricing configuration
+- [ ] Trial lifecycle
+- [ ] Subscription checkout/payment
+- [x] Admin-managed activation, renewal, pause, cancellation and expiry term handling (backend foundation; automated billing/entitlement enforcement pending)
+- [ ] Grace period and failed-renewal recovery
+- [ ] Enforce plan entitlements
+- [ ] Featured listing/ranking entitlement
+- [ ] Subscription billing history and receipts
+- [ ] Admin revenue/plan reporting
+- [ ] Provider subscription UX
+
+## Phase 7 — Admin control center
+- [ ] Admin roles/permissions
+- [ ] Audit log for admin actions
+- [ ] Review moderation
+- [ ] Payments/refunds/commission/payouts (refund request/review API foundation implemented; finance UI and gateway processing pending)
+- [ ] Support tickets and disputes
+- [ ] Coupon/promotion management
+- [ ] Provider/user suspend/restore workflows
+- [ ] Subscription plan controls and entitlement enforcement
+- [ ] Ranking/featured placement controls
+- [ ] Area/city management validation
+- [ ] Platform settings and analytics
+- [ ] Admin dashboard responsive/premium UI and action confirmations
+
+## Phase 8 — Growth
+- [ ] Favourites/saved providers
+- [ ] Coupon/promo redemption engine
+- [ ] Referral tracking/rewards and abuse prevention
+- [ ] Loyalty/reward points
+- [ ] Popular/trending services and providers
+- [ ] Personalised recommendations (privacy-conscious)
+- [ ] Search analytics and conversion funnel
+- [ ] SEO metadata, structured data and shareable pages
+- [ ] Social sharing
+- [ ] Campaign management
+
+## Phase 9 — Security, privacy & infrastructure
+- [ ] Auth/JWT/OTP audit, expiry, rotation and attempt limits
+- [ ] Rate limiting on login/OTP/API-sensitive endpoints
+- [ ] RBAC and customer/provider/admin data isolation tests
+- [ ] Secure file upload validation (size, MIME, content, filenames)
+- [ ] Remove sensitive documents from public repository/history; private storage and access control
+- [ ] Secrets/environment configuration and rotation
+- [ ] Privacy policy, terms, cancellation/refund policy and consent
+- [ ] Account deletion/data export
+- [ ] Production database and migration system
+- [ ] Backups and restore drills
+- [ ] Staging and production deployment
+- [ ] HTTPS/domain/secrets management
+- [ ] Centralized logs, monitoring, alerting and error tracking
+- [ ] Performance/load testing
+- [ ] Rollback and disaster recovery
+
+## Phase 10 — UX quality
+- [ ] Formal premium design system (tokens, typography, spacing, color, component states)
+- [ ] Replace excessive white/light surfaces where not brand-appropriate; maintain readability/accessibility
+- [ ] Customer, provider and admin portal visual consistency
+- [ ] Responsive mobile/tablet layouts
+- [ ] Accessibility review (keyboard, labels, contrast, focus)
+- [ ] Loading, empty, error, success and offline states
+- [ ] Form validation and confirmation UX
+- [ ] Navigation and onboarding polish
+
+## Phase 11 — Release QA
+- [ ] Automated backend test coverage for major journeys
+- [ ] Frontend component/unit tests
+- [ ] Browser end-to-end tests for customer/provider/admin
+- [ ] Regression suite
+- [ ] Cross-browser/device testing
+- [ ] Security test pass
+- [ ] Performance test pass
+- [ ] Staging smoke test
+- [ ] Release checklist and rollback verification
+
+## Current code-present foundations (not automatically considered complete)
+- Marketplace categories and provider discovery
+- Customer OTP/profile foundation
+- Provider registration, service create/delete, booking APIs and provider availability APIs
+- Booking status lifecycle and provider/customer/admin booking views
+- Admin user reporting/export, provider approval and verification/document workflow
+- Subscription, area/ranking and lead frameworks
+- Notification preferences/devices/in-app records/channel framework and worker
+- CI backend tests and frontend production build

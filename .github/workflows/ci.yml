@@ -1,24 +1,112 @@
 name: LUSHORA CI
 on:
   push:
-    branches: [main, chandran-work]
+    branches: [main, chandran-work, lushora-premium-v2]
   pull_request:
     branches: [main, chandran-work]
+concurrency:
+  group: lushora-ci-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   backend-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lushora
+          POSTGRES_PASSWORD: lushora_ci_password
+          POSTGRES_DB: lushora_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lushora -d lushora_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Install Gitleaks
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+      - name: Scan repository and Git history for secrets
+        run: gitleaks detect --source . --redact --exit-code 2 --verbose
       - name: Install backend requirements
         run: pip install -r backend/requirements.txt
+      - name: Install Chromium for browser E2E
+        run: python -m playwright install --with-deps chromium
+      - name: Validate operational scripts
+        working-directory: backend
+        run: bash -n scripts/migrate_production.sh scripts/backup_postgres.sh scripts/restore_verify_postgres.sh
+      - name: Audit Python dependencies
+        run: pip install pip-audit && pip-audit -r backend/requirements.txt
+      - name: Install PostgreSQL client tools
+        run: |
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt jammy-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          test -x /usr/lib/postgresql/16/bin/pg_dump
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+      - name: Run PostgreSQL migration and backup/restore drill
+        working-directory: backend
+        env:
+          LUSHORA_DATABASE_URL: postgresql+psycopg://lushora:lushora_ci_password@127.0.0.1:5432/lushora_ci
+          LUSHORA_RESTORE_DATABASE_URL: postgresql+psycopg://lushora:lushora_ci_password@127.0.0.1:5432/lushora_restore_ci
+          LUSHORA_BACKUP_DIR: ${{ runner.temp }}/lushora-ci-backups
+          LUSHORA_BACKUP_RETENTION_DAYS: 7
+          PGPASSWORD: lushora_ci_password
+          PATH: /usr/lib/postgresql/16/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          python -m alembic -c alembic.ini upgrade head
+          PG_SOURCE_URL="${LUSHORA_DATABASE_URL/postgresql+psycopg:/postgresql:}"
+          psql "$PG_SOURCE_URL" -v ON_ERROR_STOP=1 -c "CREATE TABLE IF NOT EXISTS ci_backup_drill_marker (id INTEGER PRIMARY KEY, marker TEXT NOT NULL); INSERT INTO ci_backup_drill_marker VALUES (1, 'backup-restore-ok');"
+          bash scripts/backup_postgres.sh
+          BACKUP_FILE="$(find "$LUSHORA_BACKUP_DIR" -type f -name 'lushora-*.dump' -print -quit)"
+          export BACKUP_FILE
+          psql "$PG_SOURCE_URL" -v ON_ERROR_STOP=1 -c "CREATE DATABASE lushora_restore_ci;"
+          bash scripts/restore_verify_postgres.sh
+          PG_RESTORE_URL="${LUSHORA_RESTORE_DATABASE_URL/postgresql+psycopg:/postgresql:}"
+          psql "$PG_RESTORE_URL" -v ON_ERROR_STOP=1 -c "SELECT marker FROM ci_backup_drill_marker WHERE id=1;" | grep -q backup-restore-ok
+          for table in users providers bookings payments business_verifications; do
+            source_count="$(psql "$PG_SOURCE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM $table;")"
+            restored_count="$(psql "$PG_RESTORE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM $table;")"
+            test "$source_count" = "$restored_count"
+          done
+      - name: Install frontend dependencies for browser E2E
+        working-directory: frontend
+        run: npm ci
+      - name: Install axe accessibility audit dependency
+        working-directory: frontend
+        run: npm install --no-save --package-lock=false axe-core
       - name: Run backend tests
         working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
         run: pytest -q
+      - name: Create isolated PostgreSQL concurrency test database
+        env:
+          PGPASSWORD: lushora_ci_password
+        run: createdb -h 127.0.0.1 -U lushora lushora_concurrency_test
+      - name: Run PostgreSQL concurrency regression tests
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+          LUSHORA_DATABASE_URL: postgresql+psycopg://lushora:lushora_ci_password@127.0.0.1:5432/lushora_concurrency_test
+          LUSHORA_ALLOW_POSTGRES_CONCURRENCY_TESTS: "1"
+        run: |
+          python -m alembic -c alembic.ini upgrade head
+          pytest -q tests/test_postgres_concurrency.py
   frontend-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,6 +117,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Audit npm dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
       - name: Build frontend
         working-directory: frontend
         run: npm run build
