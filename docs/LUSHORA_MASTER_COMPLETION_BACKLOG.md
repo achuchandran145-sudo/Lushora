@@ -6,92 +6,60 @@ Audit basis: repository source inspection (README, backend API routes/models, fr
 Mark a task DONE only after implementation, automated tests, frontend production build, and functional/regression validation. External credentials, local-device/browser access, or real-world integrations must be explicitly marked BLOCKED/NEEDS USER TEST if unavailable.
 
 ## Phase 0 — Existing foundation audit (REMEDIATION IN PROGRESS)
-Audit snapshot: 2026-11-22. Phase 0 is **NOT COMPLETE**. Completion requires green CI on the latest branch head plus the checklist evidence below.
 
-**Final verification snapshot:** latest branch head `d04f4f51c8a83acea01964e72c658d18d493dde2` has successful required CI runs:
-https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042390707
-https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042384738
+**Current audit snapshot:** 2026-11-23  
+**Current branch:** `lushora-premium-v2`  
+**Current audited commit:** `87429a21a68bf3e5e8556d672243ba549aaa639f`  
+**Status:** CI is green on the audited commit, but Phase 0 is **NOT COMPLETE**. CI proves the automated checks listed below; it does not replace staging/production, real-provider, device, or incident-readiness evidence.
 
-Code-level Phase 0 remediation: **COMPLETE**. Remaining items are explicitly environment-dependent release validations.
+### Latest automated evidence (2026-11-23)
 
-### Remediation status
-- [x] Master backlog established.
-- [x] Backend test suite and frontend production build are part of CI.
-- [x] Persistent hashed-identifier rate-limit implementation and regression tests for login, registration, OTP request/verification thresholds.
-- [x] Production startup guards for weak auth secrets, development OTP, CORS, PostgreSQL, private upload and backup configuration; regression tests exist.
-- [x] Demo-seed disabled in production; regression test exists.
-- [x] SQLite migration compatibility fixes for partial legacy schemas; tests added.
-- [x] Browser E2E coverage added for customer OTP/profile/mobile, guest discovery/booking, provider signup and admin login. Selector and wait logic remediation is ongoing.
-- [x] Operational backup/restore scripts and CI PostgreSQL service drill added; CI URL normalization and drill execution are still being corrected/validated.
-- [x] Latest CI green: backend tests, Playwright E2E, pip-audit, npm audit, frontend build, PostgreSQL migration/backup/restore drill.
-- [ ] Auth: verify lockout thresholds/reset, concurrent request behavior, privacy of hashed identifiers, OTP expiry/replay/attempt consumption, token expiry/tampering/revocation/version invalidation.
-- [ ] Security audit events: verify sensitive action coverage, no credential/OTP/document PII in events, admin-only access and tamper-resistance assumptions.
-- [ ] Production config: test bootstrap-admin safety, secret rotation requirements, CORS exact origins, HTTPS, secure cookies/headers, file-storage isolation.
-- [ ] Database: run Alembic against PostgreSQL, test upgrades from supported legacy schemas, rollback/recovery plan and migration locking.
-- [ ] Backup/restore: CI drill must pass and validate restored marker/schema; production-like restore, row-count comparison, RPO/RTO evidence still needed.
-- [ ] Sensitive verification files: current-tree removal and ignore rules are implemented; Git history exposure review and incident-response decision remain pending. Do not rewrite history without explicit approval.
-- [ ] Browser journeys: customer OTP/profile/search/book/cancel/reschedule; provider signup/verification/services/schedule/bookings; admin login/approval/moderation. Expand assertions and ensure reliable green runs.
-- [ ] Mobile responsiveness: viewport overflow, touch controls, navigation and modal behavior on phone/tablet sizes.
-- [ ] Accessibility: keyboard-only navigation, focus visibility/order, accessible names/labels, contrast and automated accessibility scan.
-- [ ] UI states: systematic loading, empty, error, success, offline and validation-state audit.
-- [ ] Notification worker: retry/backoff, failed delivery recovery, idempotency, dead-letter/monitoring, worker deployment and shutdown/recovery.
-- [ ] Production release checklist: staging smoke test, security review, backup/restore evidence, rollback, monitoring and incident contacts.
-- [ ] Phase 0 sign-off only after all blocking checks have evidence; no code-presence-only sign-off.
+Both required workflows passed for the exact audited commit:
 
-### Additional Phase 0 remediation (2026-11-22)
-- [x] Restore verifier now validates the backup SHA-256 sidecar before restore.
-- [x] PostgreSQL CI drill compares source/restored row counts for critical tables and verifies a restored marker.
+- Push workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45134274285
+- Pull-request workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45134282535
+- Backend: **102 passed**, 0 failed, in 32.98 seconds (CI reported 1,013 warnings; warnings are not failures and include existing `datetime.utcnow()` deprecations).
+- Frontend: production build passed.
+- Dependency audits: `pip-audit` reported no known vulnerabilities; `npm audit` reported 0 vulnerabilities.
+- Secret scan: Gitleaks repository and Git-history scan passed.
+- PostgreSQL 16: Alembic migration, backup, checksum/restore verification, restored marker, and critical-table row-count comparison passed.
+- Browser E2E and configured axe serious/critical WCAG scan passed as part of the backend test job.
 
-- [x] Notification worker refactored to avoid import-time infinite loop, validate polling interval (1-300 seconds), and support SIGTERM/SIGINT graceful stop.
-- [x] Notification delivery tests added for retry/backoff, success after retry, exhausted attempts, and user-consent suppression.
-- [x] Worker tests added for stop behavior, session closure, and poll-interval validation.
-- [x] CI now installs axe-core and runs serious/critical WCAG accessibility scans on homepage and customer login.
-- [x] CI Gitleaks action added for repository and history scanning; findings still require review and remediation.
-- [ ] Latest CI run must validate the above changes and report all jobs green.
-- [ ] Accessibility scan must produce clean serious/critical results; lower-impact findings still require review.
-- [ ] Secret scan results must be reviewed; any historical real secrets must be rotated, and history rewriting requires explicit approval.
+### Code-level remediation implemented and CI-verified
 
-### Phase 0 evidence updates (2026-11-22)
-- [x] Production now requires an absolute private portfolio upload directory outside the repository; production import no longer creates a repo-local portfolio directory. Tests added for missing and repo-local portfolio storage.
-- [x] OTP expiration, replay rejection, and OTP-disabled behavior covered by regression tests.
+- [x] Authentication: login and registration rate-limit regression tests, OTP request/verification limits, hashed identifier checks, OTP expiry/replay checks, token expiry/tampering/revocation/version checks.
+- [x] OTP single-use race: successful consumption is now a conditional database update; the regression test uses independent sessions and proves a challenge can be consumed only once.
+- [x] Admin bootstrap: rejects invalid email and weak passwords, refuses to promote an existing customer/provider account to Admin, and only rotates credentials for an existing Admin account. Regression tests cover creation, refusal, validation, and password rotation.
+- [x] Security audit: added events for provider verification-document uploads and Admin verification queue access, document views, review decisions, and permanent deletion; also logs Admin commission-rule changes and refund review/processing. Events use keyed hashes for references/IPs rather than recording PAN, Aadhaar values, document paths or document contents.
+- [x] Audit access/privacy regression: Admin audit endpoint role protection and a sensitive verification workflow test verify sampled actions are recorded without document PII in audit references.
+- [x] Notification worker: queued/retry deliveries are claimed with an atomic conditional update so competing workers cannot both claim the same delivery.
+- [x] Notification crash handling: stale `sending` rows are moved to `failed` for operator reconciliation, not automatically resent, because provider acceptance may be ambiguous after a worker crash.
+- [x] Notification retry/backoff, attempt exhaustion, consent suppression, one-winner claim, stale-delivery handling and worker shutdown/session behavior have regression coverage.
+- [x] CI includes backend/API tests, Playwright browser E2E, Gitleaks, Python/npm dependency audits, frontend build, PostgreSQL migration and backup/restore verification.
 
-- [x] PostgreSQL 16 client mismatch fixed and backup/restore drill now passed on latest observed CI.
-- [x] Python dependency audit passed on latest observed CI.
-- [x] Frontend build and npm audit passed on latest observed CI.
-- [x] Gitleaks full-history scan passed on latest observed CI.
-- [x] Backend unit/API suite: 76 passed in latest observed run; one failure was accessibility audit (contrast + logo accessible-name mismatch).
-- [x] Accessibility contrast colors corrected across homepage and portal styles.
-- [x] Logo accessible name updated to include visible brand/tagline.
-- [ ] Latest CI after accessibility fixes must be fully green.
-- [ ] Lower-impact axe findings and keyboard/focus/accessibility manual review remain.
-- [ ] Full customer/provider/admin journeys and additional responsive checks remain.
-- [ ] Production security configuration, PostgreSQL upgrade/rollback evidence, restore RPO/RTO, and operational monitoring evidence remain.
-- [ ] Notification provider live credentials/delivery and deployment/recovery remain environment-dependent.
-- [ ] Phase 0 sign-off remains blocked until all remaining validation evidence is collected.
+### Remaining Phase 0 checks
 
-### Known CI failures being remediated (2026-11-22)
-- [ ] Browser E2E OTP wait was querying a null input before UI render; replaced with locator wait and value assertion.
-- [ ] Browser E2E category selector was brittle; switched to category-chip locator.
-- [ ] Browser E2E admin assertion used stale heading; corrected to current Dashboard heading.
-- [ ] SQLite partial-schema migration attempted to alter missing tables; guards added and staff migration SQL corrected.
-- [ ] PostgreSQL backup/restore drill initially used PostgreSQL+psycopg URL syntax with psql; CI script normalizes psql URLs. Latest run pending.
-- [x] Customer profile Save loading race: profile submission can now occur only after the initial profile GET completes; browser E2E waits for the enabled Save state.
+- [ ] Run true parallel/concurrency stress tests against PostgreSQL for authentication rate limits, OTP verification, and notification delivery (current atomic-claim regression tests use independent sessions but are not a load/stress test).
+- [ ] Review security-audit tamper-resistance, retention, access logging, and alerting assumptions against the deployed database/operations model.
+- [ ] Add and verify consistent API security headers, HTTPS/HSTS behavior behind the actual reverse proxy, and production cache policy. Production CORS/auth/storage guards exist, but deployed proxy behavior is not evidenced.
+- [ ] Validate Admin bootstrap/secret rotation procedure in staging, including first-login rotation and invalidation of prior sessions.
+- [ ] PostgreSQL: test upgrades from every supported legacy production schema, migration lock behavior, and an approved rollback/recovery exercise. CI verifies the current migration chain and restore drill, not every legacy deployment state.
+- [ ] Backup/restore: complete a production-like isolated restore, application smoke test, measured RPO/RTO, off-site/encryption/retention verification, and record the evidence.
+- [ ] Sensitive verification files: review the Git history and repository artifacts for previously committed identity documents or real secrets; rotate any historical secrets found. Do not rewrite history without explicit approval.
+- [ ] Browser journeys: extend customer tests to cancellation/reschedule and error/empty states; extend provider tests through services, hours/availability and booking lifecycle; extend Admin tests through approval, rejection, moderation and sensitive action confirmations.
+- [ ] Responsive behavior: current automated overflow checks cover primary routes at 360, 390 and 768 px. Still test touch targets, menus, dialogs, booking forms and tablet/desktop layouts on real devices/browsers.
+- [ ] Accessibility: CI currently blocks serious/critical axe findings on the configured primary routes. Review lower-impact findings, more portal routes, full keyboard order, screen-reader names, focus restoration, contrast and manual WCAG behavior.
+- [ ] UI states: systematically verify loading, empty, validation, success, server-error, network/offline and retry states across customer, provider and Admin workflows.
+- [ ] Notifications: verify live FCM/WhatsApp/SMS delivery, provider rate limits/templates/consent, worker deployment, process supervision, queue alerting and operator reconciliation in an environment with real credentials. No live channel delivery is proven by unit tests.
+- [ ] Production release: run staging smoke tests; verify deployed domains, secrets, PostgreSQL, private storage, HTTPS, backups, monitoring/alert routes, rollback artifact, RPO/RTO and incident contacts.
+- [ ] Phase 0 sign-off only after all blocking checks have evidence or are explicitly accepted as release blockers by the project owner.
 
-### Phase 0 local verification evidence (2026-11-22)
-- [x] Browser E2E fixture fixed for Windows: Vite is launched through the Node executable directly, with explicit dependency checks and no npm/Vite process leak.
-- [x] Customer profile E2E assertion fixed to validate the HTTP 200 PATCH response body, persisted profile values, completion state and redirect without depending on the transient portal notice.
-- [x] axe-core added to the frontend dev dependencies and lockfile so accessibility tests are reproducible by local and CI installs.
-- [x] Full local backend/API/browser suite: 84 passed.
-- [x] Frontend production build: PASS.
-- [x] npm audit: 0 vulnerabilities.
-- [x] pip-audit: no known vulnerabilities.
-- [x] GitHub Actions latest-head CI: PASS — runs https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042390707 and https://github.com/achuchandran145-sudo/Lushora/actions/runs/45042384738 for commit d04f4f51c8a83acea01964e72c658d18d493dde2.
-- [x] Gitleaks repository and history scan: PASS — successful CI step `Scan repository and Git history for secrets`.
-- [x] PostgreSQL 16 migration and backup/restore CI drill: PASS — successful CI step `Run PostgreSQL migration and backup/restore drill`.
-- [x] Backend tests, Playwright/browser E2E, Python audit, operational scripts, npm audit and frontend build: PASS in the successful final-commit CI run.
-- [ ] Staging/production smoke test: BLOCKED — ENVIRONMENT REQUIRED (requires staging or production credentials and deployed URLs).
-- [ ] Live notification delivery: BLOCKED — ENVIRONMENT REQUIRED (requires real FCM/WhatsApp/SMS credentials and approved provider configuration).
-- [ ] HTTPS/domain production deployment, monitoring/alerting, real restore/RPO/RTO and incident ownership: BLOCKED — ENVIRONMENT REQUIRED.
+### Environment-dependent blockers
+
+- [ ] Staging/production smoke tests — **BLOCKED: requires deployed URLs and authorized environment access**.
+- [ ] Production database migration/rollback and production-like restore — **BLOCKED: requires the actual hosting database and approved maintenance/restore window**.
+- [ ] Live notification delivery — **BLOCKED: requires real provider credentials and approved account configuration**.
+- [ ] Domain/HTTPS/proxy, monitoring/alerting, retention, incident contacts and measured RPO/RTO — **BLOCKED: requires hosting-platform configuration and operations ownership**.
 
 ## Phase 1 — Customer & provider profile completion
 - [x] Customer profile edit API/UI end-to-end (API exists; validated fields + owner profile regression tests)
