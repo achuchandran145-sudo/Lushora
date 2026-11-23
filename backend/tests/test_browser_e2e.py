@@ -199,6 +199,112 @@ def test_guest_discovery_and_booking_request(browser, e2e_servers):
     browser.get_by_role("button",name="Send booking request").click()
     browser.get_by_text("Your booking request has been received",exact=False).wait_for(timeout=15000)
 
+def test_customer_can_cancel_and_reschedule_own_bookings(browser, e2e_servers):
+    from datetime import date, timedelta
+    import json
+    import re
+    import urllib.request
+
+    # Seed a verified demo business and create a real customer account for the
+    # browser session, so booking requests are attached to that customer.
+    seed = urllib.request.Request(
+        e2e_servers["api"] + "/api/admin/demo-seed",
+        data=b"{}",
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(seed, timeout=10) as response:
+        assert response.status == 200
+
+    registration = urllib.request.Request(
+        e2e_servers["api"] + "/api/auth/register",
+        data=json.dumps({
+            "full_name": "E2E Booking Customer",
+            "email": "customer-booking-flow@lushora.test",
+            "phone": "9876543091",
+            "password": "StrongCustomer123!",
+            "role": "customer",
+        }).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(registration, timeout=10) as response:
+        account = json.loads(response.read().decode())
+    assert account.get("access_token") and account.get("user", {}).get("role") == "customer"
+
+    browser.goto(e2e_servers["web"] + "/")
+    browser.evaluate(
+        "(account) => localStorage.setItem('lushora-account', JSON.stringify(account))",
+        account,
+    )
+    browser.reload()
+    browser.get_by_role("button", name="Dashboard", exact=True).wait_for(timeout=10000)
+
+    target = date.today() + timedelta(days=8)
+    while target.weekday() == 6:
+        target += timedelta(days=1)
+
+    def create_booking():
+        browser.get_by_role("button", name="Book", exact=True).first.click()
+        browser.get_by_label("Appointment date").fill(target.isoformat())
+        browser.get_by_text("Available time slots", exact=True).wait_for(timeout=15000)
+        slots = browser.locator(".available-slot-list button")
+        assert slots.count() > 0, "The demo provider should expose available slots"
+        chosen_time = slots.first.inner_text().strip()
+        slots.first.click()
+        browser.get_by_label("Your name").fill("E2E Booking Customer")
+        browser.get_by_label("Mobile number").fill("9876543091")
+        browser.get_by_role("button", name="Send booking request").click()
+        confirmation = browser.locator(".provider-section .notice")
+        confirmation.wait_for(timeout=15000)
+        message = confirmation.inner_text()
+        assert "Your booking request has been received" in message, message
+        match = re.search(r"Reference #(\d+)", message)
+        assert match, f"Booking reference was missing from: {message}"
+        return int(match.group(1)), chosen_time
+
+    browser.locator(".category-chip").filter(has_text="Salon").click(timeout=15000)
+    browser.get_by_text("Glow & Glam Salon", exact=True).wait_for(timeout=15000)
+    first_booking_id, first_slot = create_booking()
+    second_booking_id, second_slot = create_booking()
+    assert second_slot != first_slot, "A new booking should not reuse the already reserved slot"
+
+    browser.get_by_role("button", name="Dashboard", exact=True).click()
+    first_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{first_booking_id} · requested")
+    second_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{second_booking_id} · requested")
+    first_row.wait_for(timeout=15000)
+    second_row.wait_for(timeout=15000)
+
+    # Cancellation requires a deliberate confirmation and refreshes the row.
+    first_row.get_by_role("button", name="Cancel", exact=True).click()
+    first_row.get_by_role("button", name="Confirm cancellation", exact=True).click()
+    browser.get_by_role("status").filter(has_text="Booking cancelled successfully.").wait_for(timeout=15000)
+    cancelled_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{first_booking_id} · cancelled")
+    cancelled_row.wait_for(timeout=15000)
+
+    # The now-free first slot can be selected when the customer reschedules
+    # the second booking. The backend enforces owner, slot, schedule and conflict rules.
+    second_row = browser.locator(".dashboard-row").filter(has_text=f"Booking #{second_booking_id} · requested")
+    second_row.get_by_role("button", name="Reschedule", exact=True).click()
+    second_row.get_by_label("New appointment time").fill(f"{target.isoformat()}T{first_slot}")
+    second_row.get_by_role("button", name="Save new time", exact=True).click()
+    browser.get_by_role("status").filter(has_text="Booking rescheduled successfully.").wait_for(timeout=15000)
+
+    token = account["access_token"]
+    bookings_request = urllib.request.Request(
+        e2e_servers["api"] + "/api/customer/me/bookings",
+        headers={"Authorization": "Bearer " + token},
+    )
+    with urllib.request.urlopen(bookings_request, timeout=10) as response:
+        bookings = json.loads(response.read().decode())
+    by_id = {booking["id"]: booking for booking in bookings}
+    assert by_id[first_booking_id]["status"] == "cancelled"
+    assert by_id[second_booking_id]["status"] == "requested"
+    assert by_id[second_booking_id]["appointment_at"].startswith(
+        f"{target.isoformat()}T{first_slot}"
+    )
+
+
 def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.goto(e2e_servers["web"] + "/business/login")
     browser.get_by_role("button", name="Create a business account").click()
