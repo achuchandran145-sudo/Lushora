@@ -232,7 +232,7 @@ def test_postgres_otp_challenge_is_consumed_once_under_parallel_verification():
 
 def test_postgres_parallel_otp_verification_returns_one_customer_session():
     suffix = uuid4().hex
-    phone = "9" + suffix[:9]
+    phone = f"9{int(suffix[:8], 16) % 1_000_000_000:09d}"
     client = TestClient(main_module.app)
     requested = client.post("/api/v2/customer/otp/request", json={"phone": phone})
     assert requested.status_code == 200, requested.text
