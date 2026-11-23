@@ -1108,3 +1108,122 @@ def test_otp_audit_events_hash_phone_and_ip_and_never_store_otp():
             assert otp not in event.ip_hash
     finally:
         db.close()
+
+
+def test_sensitive_verification_actions_are_audited_without_document_pii(monkeypatch, tmp_path):
+    import app.main as main_module
+    from app.models import SecurityAuditEvent
+
+    upload_root = tmp_path / "private-verification"
+    upload_root.mkdir()
+    monkeypatch.setattr(main_module, "VERIFICATION_UPLOAD_DIR", upload_root)
+
+    db = SessionLocal()
+    try:
+        provider = User(
+            full_name="Audit Provider",
+            email="audit-provider-docs@example.com",
+            phone="9876543308",
+            password_hash=_password_hash("StrongProvider123!"),
+            role="provider",
+            is_active=True,
+        )
+        admin = User(
+            full_name="Audit Admin",
+            email="audit-verification-admin@example.com",
+            phone="",
+            password_hash=_password_hash("StrongAdmin123!"),
+            role="admin",
+            is_active=True,
+        )
+        db.add_all([provider, admin])
+        db.commit()
+        db.refresh(provider)
+        db.refresh(admin)
+        provider_headers = {
+            "Authorization": f"Bearer {_make_token(provider.id, provider.auth_token_version)}"
+        }
+        admin_headers = {
+            "Authorization": f"Bearer {_make_token(admin.id, admin.auth_token_version)}"
+        }
+        admin_id = admin.id
+        provider_id = provider.id
+    finally:
+        db.close()
+
+    submitted = client.post(
+        "/api/v2/provider/verification/submit",
+        headers=provider_headers,
+        json={
+            "business_name": "Audit Test Salon",
+            "categories": ["Salon"],
+            "city": "Coimbatore",
+            "locality": "Vadavalli",
+            "address": "Audit test business address",
+            "aadhaar_last4": "1234",
+            "pan_number": "ABCDE1234F",
+        },
+    )
+    assert submitted.status_code == 201
+    verification_id = submitted.json()["id"]
+
+    pdf = b"%PDF-1.4\nLUSHORA audit test document\n%%EOF"
+    for doc_type in ("aadhaar", "pan", "business"):
+        uploaded = client.post(
+            f"/api/v2/provider/verification/document/{doc_type}",
+            headers=provider_headers,
+            files={"file": (f"{doc_type}.pdf", pdf, "application/pdf")},
+        )
+        assert uploaded.status_code == 200
+
+    queue = client.get("/api/v2/admin/verifications", headers=admin_headers)
+    assert queue.status_code == 200
+    document = client.get(
+        f"/api/v2/admin/verifications/{verification_id}/document/aadhaar",
+        headers=admin_headers,
+    )
+    assert document.status_code == 200
+    reviewed = client.patch(
+        f"/api/v2/admin/verifications/{verification_id}",
+        headers=admin_headers,
+        json={"status": "approved", "admin_notes": "Documents checked"},
+    )
+    assert reviewed.status_code == 200
+    deleted = client.delete(
+        f"/api/v2/admin/verifications/{verification_id}",
+        headers=admin_headers,
+    )
+    assert deleted.status_code == 200
+
+    db = SessionLocal()
+    try:
+        events = db.query(SecurityAuditEvent).order_by(SecurityAuditEvent.id.asc()).all()
+        provider_events = [
+            row for row in events
+            if row.user_id == provider_id
+            and row.event_type == "provider_verification_document_uploaded"
+        ]
+        admin_events = [
+            row for row in events
+            if row.user_id == admin_id
+            and row.event_type in {
+                "admin_verification_queue_viewed",
+                "admin_verification_document_viewed",
+                "admin_verification_reviewed",
+                "admin_verification_deleted",
+            }
+        ]
+        assert len(provider_events) == 3
+        assert {row.event_type for row in admin_events} == {
+            "admin_verification_queue_viewed",
+            "admin_verification_document_viewed",
+            "admin_verification_reviewed",
+            "admin_verification_deleted",
+        }
+        for row in events:
+            assert "ABCDE1234F" not in row.identifier_hash
+            assert "1234" not in row.identifier_hash
+            assert str(upload_root) not in row.identifier_hash
+            assert len(row.identifier_hash) == 64
+    finally:
+        db.close()
