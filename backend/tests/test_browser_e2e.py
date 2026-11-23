@@ -233,7 +233,7 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
 
     # Admin reviews the submitted business, downloads a private document,
     # approves the application, and verifies it appears in the approved list.
-    browser.get_by_role("button", name="Business Requests", exact=True).click()
+    browser.locator(".adm-nav").filter(has_text="Business Requests").click()
     request_row = browser.get_by_role("row").filter(has_text="Browser Test Salon")
     request_row.wait_for(timeout=15000)
     request_row.get_by_role("button", name="View", exact=True).click()
