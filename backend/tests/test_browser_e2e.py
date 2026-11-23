@@ -293,7 +293,7 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     browser.get_by_label("Edit service name").fill("Premium Hair Styling")
     browser.get_by_label("Edit service price (INR)").fill("1800")
     browser.get_by_label("Edit service duration (minutes)").fill("75")
-    service_card.get_by_role("button", name="Save service", exact=True).click()
+    browser.get_by_role("button", name="Save service", exact=True).click()
     browser.get_by_role("status").filter(has_text="Service updated.").wait_for(timeout=10000)
     updated_service_card = browser.locator(".biz-servicecards article").filter(has_text="Premium Hair Styling")
     updated_service_card.wait_for(timeout=10000)
