@@ -54,6 +54,8 @@ Initial categories: **Makeup, Salon, Skin Clinic, Nail Studio**. Initial target 
 
 Production startup is intentionally fail-closed. Production must use PostgreSQL with Alembic migrations, a strong `LUSHORA_AUTH_SECRET`, development OTP disabled, exact HTTPS CORS origins, a private absolute verification-document storage directory outside the repository, and a private absolute backup directory with at least 7-day retention configured.
 
+API responses include `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and a `Content-Security-Policy` frame restriction. Responses under `/api/*` and `/openapi.json` use `Cache-Control: no-store`. Production responses also include HSTS (`max-age=31536000`). These headers do not configure TLS: the deployed ingress/reverse proxy must redirect HTTP to HTTPS and must not cache API or OpenAPI responses. Verify the browser-visible headers and redirects through the actual proxy in staging before release.
+
 ### Production migration
 
 From `backend`, set `LUSHORA_DATABASE_URL` to a PostgreSQL URL using the installed psycopg driver, then run:
