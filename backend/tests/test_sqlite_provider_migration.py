@@ -73,7 +73,7 @@ def test_sqlite_provider_upgrade_adds_legacy_columns_and_is_repeatable(
         assert row.name == "Legacy Salon"
         assert row.city == "Coimbatore"
         assert row.locality == "Vadavalli"
-        assert row.verified is True
+        assert bool(row.verified) is True
         assert row.rating == 4.5
         assert row.approval_status == "approved"
         assert row.availability_config == "{}"
