@@ -194,6 +194,39 @@ def test_postgres_otp_challenge_is_consumed_once_under_parallel_verification():
         db.close()
 
 
+
+def test_postgres_parallel_otp_verification_returns_one_customer_session():
+    suffix = uuid4().hex
+    phone = "9" + suffix[:9]
+    client = TestClient(main_module.app)
+    requested = client.post("/api/v2/customer/otp/request", json={"phone": phone})
+    assert requested.status_code == 200, requested.text
+    otp = requested.json()["development_otp"]
+
+    responses = _parallel_requests(
+        WORKERS,
+        lambda _index: client.post(
+            "/api/v2/customer/otp/verify",
+            json={"phone": phone, "otp": otp},
+        ),
+    )
+    statuses = [response.status_code for response in responses]
+    assert statuses.count(200) == 1, statuses
+    assert statuses.count(401) == WORKERS - 1, statuses
+
+    db = SessionLocal()
+    try:
+        normalized_phone = "+91" + phone
+        customers = (
+            db.query(User)
+            .filter(User.phone == normalized_phone, User.role == "customer")
+            .all()
+        )
+        assert len(customers) == 1
+    finally:
+        db.close()
+
+
 def test_postgres_notification_workers_dispatch_one_queued_delivery(monkeypatch):
     suffix = uuid4().hex
     db = SessionLocal()
