@@ -9,16 +9,16 @@ Mark a task DONE only after implementation, automated tests, frontend production
 
 **Current audit snapshot:** 2026-11-23  
 **Current branch:** `lushora-premium-v2`  
-**Current audited commit:** `5ec59aba6821a03461c13a80f8bf2cddc968841a`  
-**Status:** Latest push and pull-request CI are green on this exact commit, but Phase 0 is **NOT COMPLETE**. CI validates the automated checks below; it does not replace staging/production, real-provider, physical-device, or incident-readiness evidence.
+**Current audited commit:** `2d882c2d85b33469d42813a90901d07b45eb4dbb`  
+**Status:** Both push and pull-request CI are green on this exact commit, but Phase 0 is **NOT COMPLETE**. CI validates the automated checks below; it does not replace staging/production, real-provider, physical-device, or incident-readiness evidence.
 
 ### Latest automated evidence (2026-11-23)
 
 Both required workflows passed for the exact audited commit:
 
-- Push workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45138074982
-- Pull-request workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45138082944
-- Backend: **102 passed**, 0 failed, in 41.36 seconds on push and 26.23 seconds on PR (CI reported 1,016 warnings; warnings are not failures and include existing `datetime.utcnow()` deprecations).
+- Push workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45141973619
+- Pull-request workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45141978597
+- Backend: **103 passed**, 0 failed — 34.66 seconds on push and 27.60 seconds on PR (CI reported 1,035 warnings; warnings are not failures and include existing `datetime.utcnow()` deprecations).
 - Frontend: production build passed.
 - Dependency audits: `pip-audit` reported no known vulnerabilities; `npm audit` reported 0 vulnerabilities.
 - Secret scan: Gitleaks repository and Git-history scan passed.
@@ -39,17 +39,21 @@ Both required workflows passed for the exact audited commit:
 - [x] Expanded provider/Admin browser journey: provider registration and verification documents, Admin document review/download and approval, approved-business visibility, provider dashboard, business-profile edit, staff creation, branch creation and availability update.
 - [x] Provider Services & Pricing portal repaired: providers can add and edit services through the existing owner-scoped APIs; browser E2E verifies create/edit and service card/price refresh.
 - [x] Provider service deletion remains owner-scoped; API regression verifies the owner can delete their service, cannot delete another provider's service, and cannot edit the deleted service.
+- [x] Customer booking lifecycle browser journey: authenticated customer creates two bookings through the public booking flow, cancels one with an explicit confirmation, and reschedules the other into the cancelled booking's released time slot. The test verifies both final records through the customer bookings API.
+- [x] Customer cancellation policy response is displayed in the dashboard; UI explicitly states that LUSHORA has not collected a cancellation fee.
+- [x] Customer cancellation creates an in-app notification for the business owner. API regression covers owner-linked providers, cancellation policy fields, notification recipient and message, foreign-customer denial and repeated-cancellation rejection.
+- [x] Existing API regression coverage also exercises reschedule ownership, invalid time, booking conflicts and valid rescheduling.
 
 ### Remaining Phase 0 checks
 
-- [ ] Run true parallel/concurrency stress tests against PostgreSQL for authentication rate limits, OTP verification, and notification delivery (current atomic-claim regression tests use independent sessions but are not a load/stress test).
+- [ ] Run true parallel/concurrency stress tests against PostgreSQL for authentication rate limits, OTP verification, notification delivery, booking creation and rescheduling (current atomic-claim and booking-lock regression tests are not a full load/stress test).
 - [ ] Review security-audit tamper-resistance, retention, access logging, and alerting assumptions against the deployed database/operations model.
 - [ ] Add and verify consistent API security headers, HTTPS/HSTS behavior behind the actual reverse proxy, and production cache policy. Production CORS/auth/storage guards exist, but deployed proxy behavior is not evidenced.
 - [ ] Validate Admin bootstrap/secret rotation procedure in staging, including first-login rotation and invalidation of prior sessions.
 - [ ] PostgreSQL: test upgrades from every supported legacy production schema, migration lock behavior, and an approved rollback/recovery exercise. CI verifies the current migration chain and restore drill, not every legacy deployment state.
 - [ ] Backup/restore: complete a production-like isolated restore, application smoke test, measured RPO/RTO, off-site/encryption/retention verification, and record the evidence.
 - [ ] Sensitive verification files: review the Git history and repository artifacts for previously committed identity documents or real secrets; rotate any historical secrets found. Do not rewrite history without explicit approval.
-- [ ] Browser journeys: extend customer tests to cancellation/reschedule and error/empty states; extend provider tests through booking management, schedule/closure rules and complete booking lifecycle; extend Admin tests through rejection, moderation, finance actions and sensitive-action confirmations.
+- [ ] Extend customer browser tests to payment failure/refund states and booking error/empty/offline states; extend provider tests through full booking lifecycle and schedule/closure edge cases; extend Admin tests through rejection, moderation, finance actions and sensitive-action confirmations.
 - [ ] Responsive behavior: current automated overflow checks cover primary routes at 360, 390 and 768 px. Still test touch targets, menus, dialogs, booking forms and tablet/desktop layouts on real devices/browsers.
 - [ ] Accessibility: CI currently blocks serious/critical axe findings on the configured primary routes. Review lower-impact findings, more portal routes, full keyboard order, screen-reader names, focus restoration, contrast and manual WCAG behavior.
 - [ ] UI states: systematically verify loading, empty, validation, success, server-error, network/offline and retry states across customer, provider and Admin workflows.
