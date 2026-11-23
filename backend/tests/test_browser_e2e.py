@@ -245,6 +245,9 @@ def test_customer_can_cancel_and_reschedule_own_bookings(browser, e2e_servers):
         target += timedelta(days=1)
 
     def create_booking():
+        existing_notice = browser.locator(".provider-section .notice")
+        if existing_notice.count():
+            existing_notice.get_by_role("button").click()
         browser.get_by_role("button", name="Book", exact=True).first.click()
         browser.get_by_label("Appointment date").fill(target.isoformat())
         browser.get_by_text("Available time slots", exact=True).wait_for(timeout=15000)
@@ -267,6 +270,7 @@ def test_customer_can_cancel_and_reschedule_own_bookings(browser, e2e_servers):
     browser.get_by_text("Glow & Glam Salon", exact=True).wait_for(timeout=15000)
     first_booking_id, first_slot = create_booking()
     second_booking_id, second_slot = create_booking()
+    assert second_booking_id != first_booking_id, "Each submitted appointment must return a new booking reference"
     assert second_slot != first_slot, "A new booking should not reuse the already reserved slot"
 
     browser.get_by_role("button", name="Dashboard", exact=True).click()
