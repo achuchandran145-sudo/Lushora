@@ -677,6 +677,25 @@ def _otp_digest(phone: str, otp: str) -> str:
     return hashlib.sha256((phone + ":" + otp + ":" + os.getenv("LUSHORA_AUTH_SECRET", "development-only-change-this-secret")).encode()).hexdigest()
 
 
+def _consume_otp_challenge(db: Session, challenge_id: int, now: datetime | None = None) -> bool:
+    """Atomically consume a valid, unexpired OTP challenge exactly once."""
+    consumed_at = now or datetime.utcnow()
+    updated = db.query(models.OTPChallenge).filter(
+        models.OTPChallenge.id == challenge_id,
+        models.OTPChallenge.consumed == False,
+        models.OTPChallenge.expires_at > consumed_at,
+        models.OTPChallenge.attempts < 5,
+    ).update(
+        {
+            models.OTPChallenge.consumed: True,
+            models.OTPChallenge.attempts: models.OTPChallenge.attempts + 1,
+        },
+        synchronize_session=False,
+    )
+    db.commit()
+    return updated == 1
+
+
 @app.post("/api/v2/customer/otp/request")
 def customer_otp_request(payload: dict, request: Request, db: Session = Depends(get_db)):
     phone = _normalize_phone(str(payload.get("phone", "")))
@@ -706,19 +725,38 @@ def customer_otp_verify(payload: dict, request: Request, db: Session = Depends(g
     if not re.fullmatch(r"\d{6}", otp):
         raise HTTPException(400, "Enter the 6-digit OTP")
     challenge = db.query(models.OTPChallenge).filter(models.OTPChallenge.phone == phone, models.OTPChallenge.consumed == False).order_by(models.OTPChallenge.created_at.desc()).first()
-    if not challenge or challenge.expires_at < datetime.utcnow():
+    now = datetime.utcnow()
+    if not challenge or challenge.expires_at <= now:
         raise HTTPException(401, "OTP expired. Request a new code.")
     if challenge.attempts >= 5:
-        challenge.consumed = True; db.commit()
-        raise HTTPException(429, "Too many attempts. Request a new OTP.")
-    challenge.attempts += 1
-    if not hmac.compare_digest(challenge.code_hash, _otp_digest(phone, otp)):
+        exhausted = db.query(models.OTPChallenge).filter(
+            models.OTPChallenge.id == challenge.id,
+            models.OTPChallenge.consumed == False,
+            models.OTPChallenge.attempts >= 5,
+        ).update({models.OTPChallenge.consumed: True}, synchronize_session=False)
         db.commit()
+        if exhausted:
+            raise HTTPException(429, "Too many attempts. Request a new OTP.")
+        raise HTTPException(401, "OTP expired or already used. Request a new code.")
+    if not hmac.compare_digest(challenge.code_hash, _otp_digest(phone, otp)):
+        failed = db.query(models.OTPChallenge).filter(
+            models.OTPChallenge.id == challenge.id,
+            models.OTPChallenge.consumed == False,
+            models.OTPChallenge.expires_at > now,
+            models.OTPChallenge.attempts < 5,
+        ).update(
+            {models.OTPChallenge.attempts: models.OTPChallenge.attempts + 1},
+            synchronize_session=False,
+        )
+        db.commit()
+        if not failed:
+            raise HTTPException(401, "OTP expired or already used. Request a new code.")
+        _audit_security_event(db, "otp_verify_failed", phone, ip)
         _consume_auth_limit(db, "otp_verify_phone_hour", phone, 10, 3600)
         _consume_auth_limit(db, "otp_verify_ip_hour", ip, 30, 3600)
-        _audit_security_event(db, "otp_verify_failed", phone, ip)
         raise HTTPException(401, "Incorrect OTP")
-    challenge.consumed = True
+    if not _consume_otp_challenge(db, challenge.id, now):
+        raise HTTPException(401, "OTP expired or already used. Request a new code.")
     _clear_auth_limit(db, "otp_verify_phone_hour", phone)
     user = db.query(models.User).filter(models.User.phone == phone, models.User.role == "customer").first()
     if not user:
