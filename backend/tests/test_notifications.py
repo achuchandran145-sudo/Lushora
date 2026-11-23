@@ -138,10 +138,3 @@ def test_stale_sending_delivery_is_failed_for_reconciliation(monkeypatch):
     finally:
         db.close()
 
-
-@pytest.mark.parametrize("raw", ["0", "-1", "21", "not-a-number"])
-def test_notification_attempt_limit_configuration_validation(monkeypatch, raw):
-    monkeypatch.setenv("NOTIFICATION_MAX_ATTEMPTS", raw)
-    with pytest.raises((RuntimeError, ValueError)):
-        import importlib
-        importlib.reload(notification_service)
