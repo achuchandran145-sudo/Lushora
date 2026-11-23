@@ -92,3 +92,56 @@ def test_notification_delivery_suppressed_when_consent_disabled(monkeypatch):
         assert row.attempts == 1
     finally:
         db.close()
+
+
+def test_delivery_claim_is_atomic_and_only_one_worker_wins():
+    delivery_id = _delivery()
+    first = SessionLocal()
+    second = SessionLocal()
+    try:
+        claimed_by_first = notification_service._claim_delivery(first, delivery_id)
+        claimed_by_second = notification_service._claim_delivery(second, delivery_id)
+        assert claimed_by_first is not None
+        assert claimed_by_first.status == "sending"
+        assert claimed_by_first.attempts == 1
+        assert claimed_by_second is None
+        row = first.query(NotificationDelivery).filter_by(id=delivery_id).first()
+        assert row.status == "sending"
+        assert row.attempts == 1
+    finally:
+        first.close()
+        second.close()
+
+
+def test_stale_sending_delivery_is_failed_for_reconciliation(monkeypatch):
+    delivery_id = _delivery(status="sending")
+    monkeypatch.setattr(notification_service, "SENDING_STALE_SECONDS", 60)
+    db = SessionLocal()
+    try:
+        row = db.query(NotificationDelivery).filter_by(id=delivery_id).first()
+        row.updated_at = datetime.utcnow() - timedelta(seconds=61)
+        db.commit()
+
+        calls = {"n": 0}
+        monkeypatch.setattr(
+            notification_service,
+            "dispatch_delivery",
+            lambda *_: calls.__setitem__("n", calls["n"] + 1),
+        )
+
+        assert notification_service.process_pending(db) == 0
+        row = db.query(NotificationDelivery).filter_by(id=delivery_id).first()
+        assert row.status == "failed"
+        assert row.next_attempt_at is None
+        assert "provider acceptance is unknown" in row.last_error
+        assert calls["n"] == 0
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "21", "not-a-number"])
+def test_notification_attempt_limit_configuration_validation(monkeypatch, raw):
+    monkeypatch.setenv("NOTIFICATION_MAX_ATTEMPTS", raw)
+    with pytest.raises((RuntimeError, ValueError)):
+        import importlib
+        importlib.reload(notification_service)
