@@ -9,16 +9,16 @@ Mark a task DONE only after implementation, automated tests, frontend production
 
 **Current audit snapshot:** 2026-11-23  
 **Current branch:** `lushora-premium-v2`  
-**Current audited commit:** `87429a21a68bf3e5e8556d672243ba549aaa639f`  
-**Status:** CI is green on the audited commit, but Phase 0 is **NOT COMPLETE**. CI proves the automated checks listed below; it does not replace staging/production, real-provider, device, or incident-readiness evidence.
+**Current audited commit:** `5ec59aba6821a03461c13a80f8bf2cddc968841a`  
+**Status:** Latest push and pull-request CI are green on this exact commit, but Phase 0 is **NOT COMPLETE**. CI validates the automated checks below; it does not replace staging/production, real-provider, physical-device, or incident-readiness evidence.
 
 ### Latest automated evidence (2026-11-23)
 
 Both required workflows passed for the exact audited commit:
 
-- Push workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45134274285
-- Pull-request workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45134282535
-- Backend: **102 passed**, 0 failed, in 32.98 seconds (CI reported 1,013 warnings; warnings are not failures and include existing `datetime.utcnow()` deprecations).
+- Push workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45138074982
+- Pull-request workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45138082944
+- Backend: **102 passed**, 0 failed, in 41.36 seconds on push and 26.23 seconds on PR (CI reported 1,016 warnings; warnings are not failures and include existing `datetime.utcnow()` deprecations).
 - Frontend: production build passed.
 - Dependency audits: `pip-audit` reported no known vulnerabilities; `npm audit` reported 0 vulnerabilities.
 - Secret scan: Gitleaks repository and Git-history scan passed.
@@ -36,6 +36,9 @@ Both required workflows passed for the exact audited commit:
 - [x] Notification crash handling: stale `sending` rows are moved to `failed` for operator reconciliation, not automatically resent, because provider acceptance may be ambiguous after a worker crash.
 - [x] Notification retry/backoff, attempt exhaustion, consent suppression, one-winner claim, stale-delivery handling and worker shutdown/session behavior have regression coverage.
 - [x] CI includes backend/API tests, Playwright browser E2E, Gitleaks, Python/npm dependency audits, frontend build, PostgreSQL migration and backup/restore verification.
+- [x] Expanded provider/Admin browser journey: provider registration and verification documents, Admin document review/download and approval, approved-business visibility, provider dashboard, business-profile edit, staff creation, branch creation and availability update.
+- [x] Provider Services & Pricing portal repaired: providers can add and edit services through the existing owner-scoped APIs; browser E2E verifies create/edit and service card/price refresh.
+- [x] Provider service deletion remains owner-scoped; API regression verifies the owner can delete their service, cannot delete another provider's service, and cannot edit the deleted service.
 
 ### Remaining Phase 0 checks
 
@@ -46,7 +49,7 @@ Both required workflows passed for the exact audited commit:
 - [ ] PostgreSQL: test upgrades from every supported legacy production schema, migration lock behavior, and an approved rollback/recovery exercise. CI verifies the current migration chain and restore drill, not every legacy deployment state.
 - [ ] Backup/restore: complete a production-like isolated restore, application smoke test, measured RPO/RTO, off-site/encryption/retention verification, and record the evidence.
 - [ ] Sensitive verification files: review the Git history and repository artifacts for previously committed identity documents or real secrets; rotate any historical secrets found. Do not rewrite history without explicit approval.
-- [ ] Browser journeys: extend customer tests to cancellation/reschedule and error/empty states; extend provider tests through services, hours/availability and booking lifecycle; extend Admin tests through approval, rejection, moderation and sensitive action confirmations.
+- [ ] Browser journeys: extend customer tests to cancellation/reschedule and error/empty states; extend provider tests through booking management, schedule/closure rules and complete booking lifecycle; extend Admin tests through rejection, moderation, finance actions and sensitive-action confirmations.
 - [ ] Responsive behavior: current automated overflow checks cover primary routes at 360, 390 and 768 px. Still test touch targets, menus, dialogs, booking forms and tablet/desktop layouts on real devices/browsers.
 - [ ] Accessibility: CI currently blocks serious/critical axe findings on the configured primary routes. Review lower-impact findings, more portal routes, full keyboard order, screen-reader names, focus restoration, contrast and manual WCAG behavior.
 - [ ] UI states: systematically verify loading, empty, validation, success, server-error, network/offline and retry states across customer, provider and Admin workflows.
