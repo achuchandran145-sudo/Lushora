@@ -542,6 +542,22 @@ def test_booking_cancellation_requires_owner_and_allowed_state():
     assert client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=stranger_headers).status_code==403
     cancelled=client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=headers)
     assert cancelled.status_code==200 and cancelled.json()['status']=='cancelled'
+    assert cancelled.json()['cancellation_policy']['fee_applies'] is False
+    assert cancelled.json()['cancellation_policy']['fee_percent']==0
+    from app.database import get_db
+    from app import models
+    db=next(get_db())
+    try:
+        provider_row=db.query(models.Provider).filter(models.Provider.id==provider['id']).first()
+        provider_notification=db.query(models.Notification).filter(
+            models.Notification.recipient_user_id==provider_row.owner_user_id,
+            models.Notification.booking_id==booking_id,
+            models.Notification.title=="Customer cancelled booking"
+        ).first()
+        assert provider_notification is not None
+        assert "slot is now available again" in provider_notification.message
+    finally:
+        db.close()
     assert client.patch(f'/api/bookings/{booking_id}/status?status=cancelled',headers=headers).status_code==400
 
 def test_booking_enforces_provider_schedule_break_and_closed_dates():
