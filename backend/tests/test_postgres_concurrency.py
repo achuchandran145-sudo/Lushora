@@ -122,6 +122,41 @@ def _future_local_time(days_ahead, hour):
     return datetime.combine(date, day_time(hour, 0))
 
 
+
+def test_postgres_parallel_first_use_auth_limit_checks_create_one_row():
+    suffix = uuid4().hex
+    scope = f"pg_first_use_{suffix[:12]}"
+    identifier = f"parallel-first-check-{suffix}"
+
+    def check(_index, db):
+        try:
+            main_module._check_auth_limit(
+                db, scope, identifier, limit=10, window_seconds=300
+            )
+            return "allowed"
+        except HTTPException as exc:
+            return exc.status_code
+
+    results = _parallel_sessions(WORKERS, check)
+    assert results == ["allowed"] * WORKERS
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(AuthRateLimitEntry)
+            .filter_by(
+                scope=scope,
+                identifier_hash=main_module._rate_limit_identifier(identifier),
+            )
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].attempts == 0
+        assert rows[0].blocked_until is None
+    finally:
+        db.close()
+
+
 def test_postgres_auth_rate_limit_enforces_one_shared_parallel_budget():
     suffix = uuid4().hex
     scope = f"pg_concurrency_{suffix[:12]}"
