@@ -972,6 +972,8 @@ def logout(user: models.User = Depends(current_user), db: Session = Depends(get_
 
 @app.get("/api/admin/security/audit")
 def admin_security_audit(limit: int = Query(default=100, ge=1, le=200), offset: int = Query(default=0, ge=0), user: models.User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    # Record access to the audit trail itself, without storing the Admin's email.
+    _audit_security_event(db, "admin_security_audit_viewed", str(user.id), user_id=user.id)
     rows=db.query(models.SecurityAuditEvent).order_by(models.SecurityAuditEvent.created_at.desc()).offset(offset).limit(limit).all()
     return [{"id":row.id,"event_type":row.event_type,"user_id":row.user_id,"identifier_hash":row.identifier_hash,"ip_hash":row.ip_hash,"created_at":row.created_at.isoformat()} for row in rows]
 
