@@ -298,6 +298,11 @@ def test_business_signup_and_admin_login(browser, e2e_servers):
     updated_service_card = browser.locator(".biz-servicecards article").filter(has_text="Premium Hair Styling")
     updated_service_card.wait_for(timeout=10000)
     assert "₹1,800" in updated_service_card.inner_text()
+    with browser.expect_event("dialog") as confirmation:
+        updated_service_card.get_by_role("button", name="Delete", exact=True).click()
+    confirmation.value.accept()
+    browser.get_by_role("status").filter(has_text="Service deleted.").wait_for(timeout=10000)
+    assert browser.locator(".biz-servicecards article").filter(has_text="Premium Hair Styling").count() == 0
     browser.locator(".biz-sidebar button").filter(has_text="Availability").click()
     browser.get_by_label("Opening time").fill("10:00")
     browser.get_by_label("Closing time").fill("19:00")
