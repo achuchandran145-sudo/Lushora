@@ -9,29 +9,29 @@ Mark a task DONE only after implementation, automated tests, frontend production
 
 **Current audit snapshot:** 2026-11-23  
 **Current branch:** `lushora-premium-v2`  
-**Current audited commit:** `2d882c2d85b33469d42813a90901d07b45eb4dbb`  
-**Status:** Both push and pull-request CI are green on this exact commit, but Phase 0 is **NOT COMPLETE**. CI validates the automated checks below; it does not replace staging/production, real-provider, physical-device, or incident-readiness evidence.
+**Current audited commit:** `21ae2f9feb152a401559a90eb391a680fc5233ea`  
+**Latest push CI:** [Run 967](https://github.com/achuchandran145-sudo/Lushora/actions/runs/45161292571) passed on this commit. Phase 0 is still **NOT COMPLETE**. CI validates the automated checks below; it does not replace staging/production, real-provider, physical-device, or incident-readiness evidence.
 
 ### Latest automated evidence (2026-11-23)
 
-Both required workflows passed for the exact audited commit:
+Latest verified push workflow: [CI run 967](https://github.com/achuchandran145-sudo/Lushora/actions/runs/45161292571).
 
-- Push workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45141973619
-- Pull-request workflow: https://github.com/achuchandran145-sudo/Lushora/actions/runs/45141978597
-- Backend: **103 passed**, 0 failed — 34.66 seconds on push and 27.60 seconds on PR (CI reported 1,035 warnings; warnings are not failures and include existing `datetime.utcnow()` deprecations).
-- Frontend: production build passed.
-- Dependency audits: `pip-audit` reported no known vulnerabilities; `npm audit` reported 0 vulnerabilities.
-- Secret scan: Gitleaks repository and Git-history scan passed.
-- PostgreSQL 16: Alembic migration, backup, checksum/restore verification, restored marker, and critical-table row-count comparison passed.
-- Browser E2E and configured axe serious/critical WCAG scan passed as part of the backend test job.
+- Backend regression suite: **113 passed, 1 skipped** in 37.89 seconds; 1,036 warnings remain, primarily deprecations.
+- PostgreSQL 16 concurrency suite: **7 passed** in 1.39 seconds against the isolated `lushora_concurrency_test` database.
+- Concurrency coverage: 12 parallel first-use rate-limit checks; 12 parallel rate-limit consumes; 12 one-use OTP helper calls; 12 API OTP verification attempts yielding one customer session; 12 notification workers claiming one delivery exactly once; 8 simultaneous booking creates for one slot; and 2 simultaneous reschedules targeting one slot.
+- Frontend dependency audit and production build passed.
+- Python dependency audit, Gitleaks repository/history scan, PostgreSQL migration and backup/restore drill, browser E2E and configured axe checks passed in the same CI run.
 
 ### Code-level remediation implemented and CI-verified
 
 - [x] Authentication: login and registration rate-limit regression tests, OTP request/verification limits, hashed identifier checks, OTP expiry/replay checks, token expiry/tampering/revocation/version checks.
-- [x] OTP single-use race: successful consumption is now a conditional database update; the regression test uses independent sessions and proves a challenge can be consumed only once.
+- [x] OTP single-use race: successful consumption is now a conditional database update; SQLite regression tests and the PostgreSQL parallel API verification test prove the same challenge can produce only one customer session.
+- [x] Authentication rate-limit first-use race: SQLite/PostgreSQL conflict-safe inserts protect both read-only limit checks and consuming requests when many workers first touch the same identifier; a 12-worker PostgreSQL test verifies one shared row and no duplicate-insert failures.
+- [x] PostgreSQL parallel concurrency regression suite: independent sessions/workers cover authentication limits, OTP verification, notification dispatch, booking creation and rescheduling. CI runs the suite against a dedicated disposable database; this is a concurrency regression gate, not a sustained capacity/load test.
 - [x] Admin bootstrap: rejects invalid email and weak passwords, refuses to promote an existing customer/provider account to Admin, and only rotates credentials for an existing Admin account. Regression tests cover creation, refusal, validation, and password rotation.
 - [x] Security audit: added events for provider verification-document uploads and Admin verification queue access, document views, review decisions, and permanent deletion; also logs Admin commission-rule changes and refund review/processing. Events use keyed hashes for references/IPs rather than recording PAN, Aadhaar values, document paths or document contents.
 - [x] Audit access/privacy regression: Admin audit endpoint role protection and a sensitive verification workflow test verify sampled actions are recorded without document PII in audit references.
+- [x] Admin audit-log access is itself recorded as `admin_security_audit_viewed`; user and IP references are HMAC-hashed, and tests verify the raw Admin email/IP are not returned.
 - [x] Notification worker: queued/retry deliveries are claimed with an atomic conditional update so competing workers cannot both claim the same delivery.
 - [x] Notification crash handling: stale `sending` rows are moved to `failed` for operator reconciliation, not automatically resent, because provider acceptance may be ambiguous after a worker crash.
 - [x] Notification retry/backoff, attempt exhaustion, consent suppression, one-winner claim, stale-delivery handling and worker shutdown/session behavior have regression coverage.
@@ -46,9 +46,10 @@ Both required workflows passed for the exact audited commit:
 
 ### Remaining Phase 0 checks
 
-- [ ] Run true parallel/concurrency stress tests against PostgreSQL for authentication rate limits, OTP verification, notification delivery, booking creation and rescheduling (current atomic-claim and booking-lock regression tests are not a full load/stress test).
-- [ ] Review security-audit tamper-resistance, retention, access logging, and alerting assumptions against the deployed database/operations model.
-- [ ] Add and verify consistent API security headers, HTTPS/HSTS behavior behind the actual reverse proxy, and production cache policy. Production CORS/auth/storage guards exist, but deployed proxy behavior is not evidenced.
+- [ ] Run sustained/ramped PostgreSQL load and capacity tests on a representative staging instance (worker counts beyond the 12-worker CI regression, latency percentiles, lock waits, error rates and recovery under load). CI proves parallel correctness, not production capacity.
+- [ ] Complete the security-audit operations review: current code logs Admin audit-log access with HMAC-hashed user/IP references and purges events older than 90 days during application startup. Verify scheduled retention (startup-only cleanup is not a continuous schedule), least-privilege/tamper-resistant external storage, and alerting against the deployed database/operations model.
+- [x] Add API security response headers and a no-store cache policy for `/api/*` and `/openapi.json`; HSTS is emitted only in production. Automated tests validate header values and production-only HSTS.
+- [ ] Verify HTTP-to-HTTPS redirects, browser-visible HSTS, and cache bypass through the actual staging reverse proxy/CDN. Application headers do not configure the proxy itself.
 - [ ] Validate Admin bootstrap/secret rotation procedure in staging, including first-login rotation and invalidation of prior sessions.
 - [ ] PostgreSQL: test upgrades from every supported legacy production schema, migration lock behavior, and an approved rollback/recovery exercise. CI verifies the current migration chain and restore drill, not every legacy deployment state.
 - [ ] Backup/restore: complete a production-like isolated restore, application smoke test, measured RPO/RTO, off-site/encryption/retention verification, and record the evidence.
